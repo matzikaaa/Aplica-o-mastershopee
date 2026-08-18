@@ -10,10 +10,11 @@ import { MarketplaceCard } from "@/components/integrations/marketplace-card";
 export default async function IntegrationsPage({ searchParams }: { searchParams: { error?: string; reason?: string; connected?: string } }) {
   const { workspace } = await requireWorkspace();
   const env = getIntegrationEnv();
-  const permissions = await getPlanPermissionService(workspace.id);
+  const [permissions, accounts] = await Promise.all([
+    getPlanPermissionService(workspace.id),
+    prisma.marketplaceAccount.findMany({ where: { workspaceId: workspace.id } }),
+  ]);
   const limit = permissions.getMarketplaceLimit();
-
-  const accounts = await prisma.marketplaceAccount.findMany({ where: { workspaceId: workspace.id } });
   const marketplaces = Object.keys(MARKETPLACE_LABELS) as MarketplaceType[];
 
   return (

@@ -21,8 +21,10 @@ export default async function AdsPage() {
   const permissions = await getPlanPermissionService(workspace.id);
   const adsGate = permissions.canUseAds();
 
-  const accounts = await prisma.marketplaceAccount.findMany({ where: { workspaceId: workspace.id } });
-  const campaignCount = await prisma.adCampaign.count({ where: { workspaceId: workspace.id } });
+  const [accounts, campaignCount] = await Promise.all([
+    prisma.marketplaceAccount.findMany({ where: { workspaceId: workspace.id } }),
+    prisma.adCampaign.count({ where: { workspaceId: workspace.id } }),
+  ]);
 
   if (!adsGate.allowed) {
     return (
