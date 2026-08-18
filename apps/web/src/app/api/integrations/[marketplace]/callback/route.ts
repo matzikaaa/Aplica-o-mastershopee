@@ -4,6 +4,7 @@ import { createProvider, encryptSecret, MarketplaceApiError } from "@mastershope
 import { getIntegrationEnv } from "@/lib/integration-env";
 import { SLUG_TO_MARKETPLACE } from "@/lib/marketplace-slug";
 import { verifyOAuthState } from "@/lib/oauth-state";
+import { captureError } from "@/lib/observability";
 
 /** OAuth callback (§33, §39). Verifies state, exchanges the code, encrypts tokens before they ever touch the DB. */
 export async function GET(request: Request, { params }: { params: { marketplace: string } }) {
@@ -79,6 +80,7 @@ export async function GET(request: Request, { params }: { params: { marketplace:
 
     return NextResponse.redirect(new URL("/integrations?connected=1", request.url));
   } catch (err) {
+    captureError(err, { marketplace, workspaceId: verified.workspaceId, route: "integrations.callback" });
     const message = err instanceof MarketplaceApiError ? err.message : "Falha ao conectar com o marketplace.";
     return NextResponse.redirect(new URL(`/integrations?error=oauth_failed&message=${encodeURIComponent(message)}`, request.url));
   }
