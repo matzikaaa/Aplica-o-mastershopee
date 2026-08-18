@@ -77,7 +77,7 @@ export async function runWhatsappScheduler(): Promise<void> {
   }
 }
 
-function buildDailySummaryMessage(workspaceName: string, metric: { grossRevenue: unknown; netProfit: unknown; orderCount: number; adSpend: unknown }): string {
+export function buildDailySummaryMessage(workspaceName: string, metric: { grossRevenue: unknown; netProfit: unknown; orderCount: number; adSpend: unknown }): string {
   const margin = Number(metric.grossRevenue) === 0 ? 0 : (Number(metric.netProfit) / Number(metric.grossRevenue)) * 100;
   return [
     `Bom dia! 👋 Aqui está o resultado de ontem em ${workspaceName}:`,
@@ -94,7 +94,7 @@ function formatBRL(value: unknown): string {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value));
 }
 
-function zonedTime(timezone: string): Date {
+export function zonedTime(timezone: string): Date {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     year: "numeric",

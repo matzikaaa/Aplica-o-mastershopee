@@ -73,7 +73,7 @@ Demo login after seeding: **demo@mastershopee.app / demo12345** (clearly `[DEMO]
 pnpm test          # runs every package's vitest suite (financial-engine, billing, integrations)
 ```
 
-`financial-engine` and `billing` are the two packages explicitly required to have tests (§59-60): historical cost resolution, margin/ROAS math, Decimal precision, plan-limit enforcement, and subscription-state access rules are all covered — 40 tests total as of this writing.
+`financial-engine` and `billing` are the two packages explicitly required to have tests (§59-60): historical cost resolution, margin/ROAS math, Decimal precision, plan-limit enforcement, and subscription-state access rules are all covered — 53 tests total across `financial-engine`, `billing`, `shared`, `integrations`, and `apps/worker` as of this writing.
 
 ### Build / typecheck
 
@@ -159,4 +159,6 @@ This codebase includes the technical building blocks LGPD compliance needs (per-
 
 ## Roadmap (not yet started)
 
-FASE 6-10 from the original brief beyond what's listed as "implemented" above: production observability wiring (Sentry/structured metrics shipping — logging itself is in place), a dedicated onboarding "first sync progress" UI (§82 — the backend event sequence exists via `IntegrationSync`, the live-updating UI does not yet), AI-driven insights (§66), and broader automated test coverage for the worker's sync jobs (currently covered by the underlying `financial-engine`/`billing`/`integrations` unit tests, but no end-to-end test harness for the BullMQ jobs themselves yet).
+FASE 6-10 from the original brief beyond what's listed as "implemented" above: wiring a real Sentry SDK behind `lib/observability.ts` (the seam and structured JSON logging are in place, `@sentry/nextjs` itself is not installed since no DSN is available in this environment), AI-driven insights (§66), and end-to-end integration tests for the BullMQ jobs against a real Postgres/Redis test instance (the jobs' pure logic — e.g. WhatsApp message formatting, timezone math — is unit-tested; the DB-touching parts of `sync-marketplace`/`compute-daily-metrics`/`check-alerts` are so far only verified by the manual live smoke tests described in this README's development history, not an automated harness).
+
+Already closed since the initial foundation commit: security headers + brute-force rate limiting on auth endpoints (§38), branded error/404 boundaries instead of Next's defaults (§44), the onboarding "first sync progress" UI (§82 — `SyncProgress` polls real `IntegrationSync` rows, no invented stage labels), and "Sincronizar agora"/"Reconectar" actions on the Integrations page (§33).
