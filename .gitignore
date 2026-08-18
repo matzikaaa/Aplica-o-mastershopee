@@ -15,3 +15,5 @@ apps/web/next-env.d.ts
 packages/database/generated
 packages/database/prisma/dev.db
 .vercel
+*.tsbuildinfo
+dump.rdb
