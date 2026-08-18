@@ -4,8 +4,14 @@ import { prisma } from "@mastershopee/database";
 import { hashPassword } from "@/lib/password";
 import { generateToken } from "@/lib/tokens";
 import { sendVerificationEmail } from "@/lib/email";
+import { getClientIp, isAllowed } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
+  // §38: throttle account creation per IP to slow down mass signup abuse.
+  if (!(await isAllowed(`register:ip:${getClientIp(request)}`, 10, 3600))) {
+    return NextResponse.json({ error: "Muitas tentativas. Tente novamente mais tarde." }, { status: 429 });
+  }
+
   const body = await request.json();
   const parsed = registerSchema.safeParse(body);
   if (!parsed.success) {

@@ -33,6 +33,10 @@ function LoginForm() {
       setError("Confirme seu e-mail antes de entrar. Verifique sua caixa de entrada.");
       return;
     }
+    if (res?.error === "TOO_MANY_ATTEMPTS") {
+      setError("Muitas tentativas de login. Aguarde alguns minutos e tente novamente.");
+      return;
+    }
     if (res?.error) {
       setError("E-mail ou senha incorretos.");
       return;

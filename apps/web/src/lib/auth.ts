@@ -2,6 +2,7 @@ import type { AuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@mastershopee/database";
 import { verifyPassword } from "./password";
+import { isAllowed } from "./rate-limit";
 
 /**
  * NextAuth v4 configuration. CredentialsProvider forces JWT sessions (a
@@ -25,10 +26,23 @@ export const authOptions: AuthOptions = {
         email: { label: "E-mail", type: "email" },
         password: { label: "Senha", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.email || !credentials.password) return null;
 
-        const user = await prisma.user.findUnique({ where: { email: credentials.email.toLowerCase() } });
+        // Brute-force protection (§38): throttle by IP and by target email
+        // independently, so an attacker can't dodge the limit by rotating
+        // either one alone.
+        const ip = req.headers?.["x-forwarded-for"]?.toString().split(",")[0]?.trim() ?? "unknown";
+        const email = credentials.email.toLowerCase();
+        const [ipAllowed, emailAllowed] = await Promise.all([
+          isAllowed(`login:ip:${ip}`, 20, 300),
+          isAllowed(`login:email:${email}`, 8, 300),
+        ]);
+        if (!ipAllowed || !emailAllowed) {
+          throw new Error("TOO_MANY_ATTEMPTS");
+        }
+
+        const user = await prisma.user.findUnique({ where: { email } });
         if (!user) return null;
         if (!verifyPassword(credentials.password, user.passwordHash)) return null;
         if (!user.emailVerifiedAt) {

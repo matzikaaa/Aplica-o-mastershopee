@@ -3,10 +3,16 @@ import { requestPasswordResetSchema } from "@mastershopee/shared";
 import { prisma } from "@mastershopee/database";
 import { generateToken } from "@/lib/tokens";
 import { sendPasswordResetEmail } from "@/lib/email";
+import { getClientIp, isAllowed } from "@/lib/rate-limit";
 
 const GENERIC_RESPONSE = { message: "Se este e-mail existir, enviamos um link de redefinição de senha." };
 
 export async function POST(request: Request) {
+  // §38: throttle per IP so this can't be used to mass-spam arbitrary inboxes.
+  if (!(await isAllowed(`password-reset:ip:${getClientIp(request)}`, 10, 3600))) {
+    return NextResponse.json({ error: "Muitas tentativas. Tente novamente mais tarde." }, { status: 429 });
+  }
+
   const body = await request.json();
   const parsed = requestPasswordResetSchema.safeParse(body);
   if (!parsed.success) {
