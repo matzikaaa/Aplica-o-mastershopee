@@ -1,0 +1,28 @@
+{
+  "name": "mastershopee",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Central financeira inteligente para vendedores de marketplaces",
+  "packageManager": "pnpm@9.1.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @mastershopee/web dev",
+    "dev:worker": "pnpm --filter @mastershopee/worker dev",
+    "build": "pnpm -r --filter=./packages/* build && pnpm --filter @mastershopee/web build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @mastershopee/database generate",
+    "db:migrate": "pnpm --filter @mastershopee/database migrate",
+    "db:seed": "pnpm --filter @mastershopee/database seed",
+    "db:studio": "pnpm --filter @mastershopee/database studio",
+    "worker": "pnpm --filter @mastershopee/worker start"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.4",
+    "prettier": "^3.3.3",
+    "@types/node": "^20.14.15"
+  }
+}

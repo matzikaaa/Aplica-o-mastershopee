@@ -1,0 +1,737 @@
+// Mastershopee — modelo de dados
+// Multi-tenant: tudo que pertence a uma operação de vendas é escopado por Workspace.
+// Dinheiro nunca é float: todos os valores monetários usam Decimal(14,4) + moeda explícita.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// IDENTITY / MULTI-TENANCY
+// ─────────────────────────────────────────────────────────────
+
+model User {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  emailVerifiedAt    DateTime?
+  passwordHash       String
+  name               String
+  avatarUrl          String?
+  isSuperAdmin       Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  memberships        WorkspaceMember[]
+  auditLogs          AuditLog[]
+  sessions           Session[]
+  passwordResets     PasswordResetToken[]
+  emailVerifications EmailVerificationToken[]
+}
+
+// Server-side session record backing NextAuth's database session strategy.
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+}
+
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model Workspace {
+  id            String   @id @default(cuid())
+  name          String
+  slug          String   @unique
+  timezone      String   @default("America/Sao_Paulo")
+  currency      String   @default("BRL")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  members             WorkspaceMember[]
+  subscription        Subscription?
+  marketplaceAccounts MarketplaceAccount[]
+  products            Product[]
+  orders              Order[]
+  adCampaigns         AdCampaign[]
+  dailyMetrics        DailyMetric[]
+  productMetrics      ProductMetric[]
+  marketplaceMetrics  MarketplaceMetric[]
+  whatsappConfig      WhatsappConfiguration?
+  whatsappReports     WhatsappReport[]
+  alertRules          AlertRule[]
+  alertEvents         AlertEvent[]
+  integrationSyncs    IntegrationSync[]
+  integrationLogs     IntegrationLog[]
+  webhookEvents       WebhookEvent[]
+  auditLogs           AuditLog[]
+  notifications       Notification[]
+  usageCounters       UsageCounter[]
+
+  onboardingCompletedAt DateTime?
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        WorkspaceRole @default(MEMBER)
+  invitedAt   DateTime      @default(now())
+  joinedAt    DateTime?
+
+  @@unique([workspaceId, userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// BILLING
+// ─────────────────────────────────────────────────────────────
+
+enum PlanCode {
+  STARTER
+  PRO
+  SCALE
+}
+
+enum SubscriptionStatus {
+  trialing
+  active
+  past_due
+  canceled
+  expired
+  incomplete
+}
+
+enum BillingInterval {
+  monthly
+  yearly
+}
+
+model Plan {
+  id            String   @id @default(cuid())
+  code          PlanCode @unique
+  name          String
+  description   String
+  priceMonthly  Decimal  @db.Decimal(10, 2)
+  priceYearly   Decimal  @db.Decimal(10, 2)
+  // Structured limits/features consumed by @mastershopee/billing — never hardcode
+  // plan checks elsewhere in the codebase.
+  limits        Json
+  features      Json
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  workspaceId          String             @unique
+  workspace            Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  planId               String
+  plan                 Plan               @relation(fields: [planId], references: [id])
+  status               SubscriptionStatus @default(trialing)
+  interval             BillingInterval    @default(monthly)
+  trialEndsAt          DateTime?
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  canceledAt           DateTime?
+  // Stripe (or equivalent PaymentProvider) identifiers — backend is the
+  // source of truth; frontend never grants access on its own.
+  paymentProvider      String             @default("stripe")
+  providerCustomerId   String?
+  providerSubscriptionId String?
+  couponCode           String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+}
+
+model UsageCounter {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  metric      String   // e.g. "ordersProcessed", "whatsappMessagesSent", "reportsGenerated"
+  periodStart DateTime
+  periodEnd   DateTime
+  value       Int      @default(0)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([workspaceId, metric, periodStart])
+}
+
+// ─────────────────────────────────────────────────────────────
+// MARKETPLACE INTEGRATION
+// ─────────────────────────────────────────────────────────────
+
+enum MarketplaceType {
+  SHOPEE
+  MERCADO_LIVRE
+  SHEIN
+  TIKTOK_SHOP
+}
+
+enum MarketplaceAccountStatus {
+  NOT_CONNECTED
+  CONNECTING
+  SYNCING
+  CONNECTED
+  ERROR
+  TOKEN_EXPIRED
+  DISCONNECTED
+}
+
+model MarketplaceAccount {
+  id              String                    @id @default(cuid())
+  workspaceId     String
+  workspace       Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  marketplace     MarketplaceType
+  externalShopId  String
+  displayName     String
+  status          MarketplaceAccountStatus  @default(NOT_CONNECTED)
+  lastSyncAt      DateTime?
+  lastSyncCursor  String?
+  lastErrorMessage String?
+  connectedAt     DateTime?
+  disconnectedAt  DateTime?
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  credential      MarketplaceCredential?
+  products        MarketplaceProduct[]
+  orders          Order[]
+  adCampaigns     AdCampaign[]
+  syncs           IntegrationSync[]
+  logs            IntegrationLog[]
+  webhookEvents   WebhookEvent[]
+
+  @@unique([workspaceId, marketplace, externalShopId])
+}
+
+// Secrets are encrypted at rest (AES-256-GCM, see packages/integrations/src/credentials.ts).
+// Never selected by default queries that serialize to the client/API.
+model MarketplaceCredential {
+  id                   String             @id @default(cuid())
+  marketplaceAccountId String             @unique
+  marketplaceAccount   MarketplaceAccount @relation(fields: [marketplaceAccountId], references: [id], onDelete: Cascade)
+  encryptedAccessToken String
+  encryptedRefreshToken String?
+  accessTokenExpiresAt DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                String?
+  rotatedAt            DateTime           @default(now())
+  createdAt            DateTime           @default(now())
+}
+
+enum IntegrationSyncType {
+  FULL
+  INCREMENTAL
+  PRODUCTS
+  ORDERS
+  ADS
+  FEES
+}
+
+enum IntegrationSyncStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  PARTIAL
+}
+
+model IntegrationSync {
+  id                   String                 @id @default(cuid())
+  workspaceId          String
+  workspace            Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  marketplaceAccountId String
+  marketplaceAccount   MarketplaceAccount     @relation(fields: [marketplaceAccountId], references: [id], onDelete: Cascade)
+  type                 IntegrationSyncType
+  status               IntegrationSyncStatus  @default(QUEUED)
+  cursor               String?
+  itemsProcessed       Int                    @default(0)
+  startedAt            DateTime?
+  finishedAt           DateTime?
+  errorMessage         String?
+  // idempotency: one running sync of a given type per account at a time
+  lockKey              String?                @unique
+  createdAt            DateTime               @default(now())
+}
+
+model IntegrationLog {
+  id                   String              @id @default(cuid())
+  workspaceId          String
+  workspace            Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  marketplaceAccountId String?
+  marketplaceAccount   MarketplaceAccount? @relation(fields: [marketplaceAccountId], references: [id], onDelete: Cascade)
+  level                String              // info | warn | error
+  message              String
+  context              Json?
+  createdAt            DateTime            @default(now())
+}
+
+model WebhookEvent {
+  id                   String              @id @default(cuid())
+  workspaceId          String?
+  workspace            Workspace?          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  marketplaceAccountId String?
+  marketplaceAccount   MarketplaceAccount? @relation(fields: [marketplaceAccountId], references: [id], onDelete: Cascade)
+  marketplace          MarketplaceType
+  // External event id used for idempotency — combined unique constraint
+  // guarantees the same webhook delivery is never processed twice.
+  externalEventId      String
+  eventType             String
+  payload              Json
+  signatureValid       Boolean             @default(false)
+  processedAt          DateTime?
+  processingError      String?
+  createdAt            DateTime            @default(now())
+
+  @@unique([marketplace, externalEventId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// CATALOG / COSTS
+// ─────────────────────────────────────────────────────────────
+
+model Product {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  sku          String
+  name         String
+  imageUrl     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  marketplaceProducts MarketplaceProduct[]
+  costs               ProductCost[]
+  orderItems          OrderItem[]
+  productMetrics      ProductMetric[]
+
+  @@unique([workspaceId, sku])
+}
+
+model MarketplaceProduct {
+  id                    String              @id @default(cuid())
+  productId             String
+  product               Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  marketplaceAccountId  String
+  marketplaceAccount    MarketplaceAccount  @relation(fields: [marketplaceAccountId], references: [id], onDelete: Cascade)
+  externalProductId     String
+  externalVariationId   String?
+  title                 String
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  @@unique([marketplaceAccountId, externalProductId, externalVariationId])
+}
+
+// Historical cost — a new row per change. Orders always resolve the cost
+// that was effective on the order date; the current cost never rewrites
+// historical profit calculations.
+model ProductCost {
+  id                String   @id @default(cuid())
+  productId         String
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  unitCost          Decimal  @db.Decimal(14, 4)
+  packagingCost     Decimal  @db.Decimal(14, 4) @default(0)
+  operationalCost   Decimal  @db.Decimal(14, 4) @default(0)
+  taxPercent        Decimal  @db.Decimal(7, 4) @default(0)
+  otherCosts        Decimal  @db.Decimal(14, 4) @default(0)
+  effectiveFrom     DateTime
+  createdAt         DateTime @default(now())
+  createdByUserId   String?
+
+  @@index([productId, effectiveFrom])
+}
+
+// ─────────────────────────────────────────────────────────────
+// ORDERS / FINANCIAL TRANSACTIONS
+// ─────────────────────────────────────────────────────────────
+
+enum OrderStatus {
+  CREATED
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELED
+  REFUNDED
+  RETURNED
+}
+
+model Order {
+  id                    String              @id @default(cuid())
+  workspaceId           String
+  workspace             Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  marketplaceAccountId  String
+  marketplaceAccount    MarketplaceAccount  @relation(fields: [marketplaceAccountId], references: [id], onDelete: Cascade)
+  marketplace           MarketplaceType
+  externalOrderId       String
+  status                OrderStatus
+  orderedAt             DateTime
+  currency              String              @default("BRL")
+
+  grossAmount           Decimal             @db.Decimal(14, 4)
+  discountAmount        Decimal             @db.Decimal(14, 4) @default(0)
+  shippingChargedToBuyer Decimal            @db.Decimal(14, 4) @default(0)
+  shippingSubsidizedByMerchant Decimal      @db.Decimal(14, 4) @default(0)
+  commissionAmount      Decimal             @db.Decimal(14, 4) @default(0)
+  marketplaceFeeAmount   Decimal            @db.Decimal(14, 4) @default(0)
+  taxAmount              Decimal            @db.Decimal(14, 4) @default(0)
+  adSpendAttributed      Decimal            @db.Decimal(14, 4) @default(0)
+
+  rawPayload             Json?
+
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  items                  OrderItem[]
+  transactions           FinancialTransaction[]
+  refunds                Refund[]
+  cancellations          Cancellation[]
+  returns                Return[]
+
+  // idempotency: same external order from the same account is never duplicated,
+  // whether it arrives via webhook or via polling sync.
+  @@unique([marketplaceAccountId, externalOrderId])
+  @@index([workspaceId, orderedAt])
+}
+
+model OrderItem {
+  id               String   @id @default(cuid())
+  orderId          String
+  order            Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId        String?
+  product          Product? @relation(fields: [productId], references: [id])
+  externalSku      String
+  title            String
+  quantity         Int
+  unitPrice        Decimal  @db.Decimal(14, 4)
+  // Cost snapshot resolved from ProductCost at order time — persisted so
+  // historical profit never shifts when today's cost changes.
+  unitCostSnapshot Decimal? @db.Decimal(14, 4)
+  commissionAmount Decimal  @db.Decimal(14, 4) @default(0)
+  feeAmount        Decimal  @db.Decimal(14, 4) @default(0)
+  adSpendAttributed Decimal @db.Decimal(14, 4) @default(0)
+  taxAmount        Decimal  @db.Decimal(14, 4) @default(0)
+
+  @@index([orderId])
+  @@index([productId])
+}
+
+enum FinancialTransactionType {
+  SALE
+  COMMISSION
+  MARKETPLACE_FEE
+  SHIPPING
+  TAX
+  AD_SPEND
+  REFUND
+  CANCELLATION
+  DISCOUNT
+  OTHER
+}
+
+// Immutable ledger entry — every component of every order's economics is
+// recorded here so a profit figure can always be explained line by line.
+model FinancialTransaction {
+  id          String                    @id @default(cuid())
+  workspaceId String
+  orderId     String?
+  order       Order?                    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type        FinancialTransactionType
+  amount      Decimal                   @db.Decimal(14, 4)
+  currency    String                    @default("BRL")
+  description String?
+  occurredAt  DateTime
+  createdAt   DateTime                  @default(now())
+
+  @@index([workspaceId, occurredAt])
+  @@index([orderId])
+}
+
+model Refund {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amount     Decimal  @db.Decimal(14, 4)
+  reason     String?
+  occurredAt DateTime
+  createdAt  DateTime @default(now())
+}
+
+model Cancellation {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reason     String?
+  occurredAt DateTime
+  createdAt  DateTime @default(now())
+}
+
+model Return {
+  id         String   @id @default(cuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reason     String?
+  occurredAt DateTime
+  createdAt  DateTime @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────
+// ADS
+// ─────────────────────────────────────────────────────────────
+
+model AdCampaign {
+  id                   String             @id @default(cuid())
+  workspaceId          String
+  workspace            Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  marketplaceAccountId String
+  marketplaceAccount   MarketplaceAccount @relation(fields: [marketplaceAccountId], references: [id], onDelete: Cascade)
+  marketplace          MarketplaceType
+  externalCampaignId   String
+  name                 String
+  status               String
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  spend                AdSpend[]
+
+  @@unique([marketplaceAccountId, externalCampaignId])
+}
+
+// Daily granularity ad spend/performance — only populated when the
+// marketplace's Ads API actually exposes these metrics.
+model AdSpend {
+  id           String     @id @default(cuid())
+  campaignId   String
+  campaign     AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  date         DateTime   @db.Date
+  spend        Decimal    @db.Decimal(14, 4)
+  attributedRevenue Decimal @db.Decimal(14, 4) @default(0)
+  orders       Int        @default(0)
+  clicks       Int?
+  impressions  Int?
+  createdAt    DateTime   @default(now())
+
+  @@unique([campaignId, date])
+}
+
+// ─────────────────────────────────────────────────────────────
+// PRE-AGGREGATED METRICS (populated by workers — the dashboard reads
+// these instead of recomputing over raw orders on every request)
+// ─────────────────────────────────────────────────────────────
+
+enum DataQualityStatus {
+  complete
+  partial
+  processing
+  stale
+  error
+}
+
+model DailyMetric {
+  id                String            @id @default(cuid())
+  workspaceId       String
+  workspace         Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  date              DateTime          @db.Date
+  grossRevenue      Decimal           @db.Decimal(14, 4) @default(0)
+  netRevenue        Decimal           @db.Decimal(14, 4) @default(0)
+  productCost       Decimal           @db.Decimal(14, 4) @default(0)
+  commission        Decimal           @db.Decimal(14, 4) @default(0)
+  marketplaceFees   Decimal           @db.Decimal(14, 4) @default(0)
+  shipping          Decimal           @db.Decimal(14, 4) @default(0)
+  adSpend           Decimal           @db.Decimal(14, 4) @default(0)
+  taxes             Decimal           @db.Decimal(14, 4) @default(0)
+  refunds           Decimal           @db.Decimal(14, 4) @default(0)
+  otherCosts        Decimal           @db.Decimal(14, 4) @default(0)
+  grossProfit       Decimal           @db.Decimal(14, 4) @default(0)
+  netProfit         Decimal           @db.Decimal(14, 4) @default(0)
+  orderCount        Int               @default(0)
+  dataQuality       DataQualityStatus @default(processing)
+  computedAt        DateTime          @default(now())
+
+  @@unique([workspaceId, date])
+  @@index([workspaceId, date])
+}
+
+model ProductMetric {
+  id            String            @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  productId     String
+  product       Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  date          DateTime          @db.Date
+  unitsSold     Int               @default(0)
+  revenue       Decimal           @db.Decimal(14, 4) @default(0)
+  cost          Decimal           @db.Decimal(14, 4) @default(0)
+  fees          Decimal           @db.Decimal(14, 4) @default(0)
+  adSpend       Decimal           @db.Decimal(14, 4) @default(0)
+  netProfit     Decimal           @db.Decimal(14, 4) @default(0)
+  margin        Decimal           @db.Decimal(7, 4) @default(0)
+  dataQuality   DataQualityStatus @default(processing)
+  computedAt    DateTime          @default(now())
+
+  @@unique([workspaceId, productId, date])
+  @@index([workspaceId, date])
+}
+
+model MarketplaceMetric {
+  id            String            @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  marketplace   MarketplaceType
+  date          DateTime          @db.Date
+  grossRevenue  Decimal           @db.Decimal(14, 4) @default(0)
+  netProfit     Decimal           @db.Decimal(14, 4) @default(0)
+  orderCount    Int               @default(0)
+  dataQuality   DataQualityStatus @default(processing)
+  computedAt    DateTime          @default(now())
+
+  @@unique([workspaceId, marketplace, date])
+}
+
+// ─────────────────────────────────────────────────────────────
+// WHATSAPP
+// ─────────────────────────────────────────────────────────────
+
+model WhatsappConfiguration {
+  id                String    @id @default(cuid())
+  workspaceId       String    @unique
+  workspace         Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  phoneNumber       String
+  verified          Boolean   @default(false)
+  dailyReportTime   String?   // "HH:mm" in workspace timezone
+  dailyReportEnabled Boolean  @default(false)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+enum WhatsappReportStatus {
+  scheduled
+  sent
+  failed
+}
+
+model WhatsappReport {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  scheduledAt       DateTime
+  sentAt            DateTime?
+  status            WhatsappReportStatus  @default(scheduled)
+  providerMessageId String?
+  errorMessage      String?
+  payload           Json?
+
+  @@index([workspaceId, scheduledAt])
+}
+
+// ─────────────────────────────────────────────────────────────
+// ALERTS / NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────
+
+enum AlertRuleType {
+  NEGATIVE_MARGIN_PRODUCT
+  AD_SPEND_THRESHOLD
+  NET_MARGIN_BELOW
+  MARKETPLACE_SYNC_FAILED
+  DAILY_REVENUE_ABOVE
+}
+
+enum AlertSeverity {
+  CRITICAL
+  IMPORTANT
+  INFORMATIVE
+}
+
+model AlertRule {
+  id          String        @id @default(cuid())
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  type        AlertRuleType
+  severity    AlertSeverity @default(IMPORTANT)
+  config      Json          // e.g. { thresholdAmount: 500 } or { minMarginPercent: 10 }
+  channels    Json          // e.g. ["whatsapp", "in_app"]
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+
+  events      AlertEvent[]
+}
+
+model AlertEvent {
+  id          String        @id @default(cuid())
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  alertRuleId String
+  alertRule   AlertRule     @relation(fields: [alertRuleId], references: [id], onDelete: Cascade)
+  severity    AlertSeverity
+  title       String
+  message     String
+  context     Json?
+  triggeredAt DateTime      @default(now())
+  acknowledgedAt DateTime?
+}
+
+model Notification {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  title       String
+  body        String
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+// ─────────────────────────────────────────────────────────────
+// AUDIT
+// ─────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
+  action      String    // e.g. "workspace.marketplace.connected"
+  entityType  String?
+  entityId    String?
+  metadata    Json?
+  ipAddress   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([workspaceId, createdAt])
+}

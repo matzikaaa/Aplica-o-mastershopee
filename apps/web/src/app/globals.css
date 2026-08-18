@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222 47% 11%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 222 89% 55%;
+
+  --primary: 222 89% 55%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222 47% 11%;
+
+  --success: 152 60% 36%;
+  --success-foreground: 0 0% 100%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 26 60% 15%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+
+  --radius: 0.75rem;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+.dark {
+  --background: 222 47% 6%;
+  --foreground: 210 40% 98%;
+  --card: 222 40% 9%;
+  --card-foreground: 210 40% 98%;
+  --muted: 222 30% 14%;
+  --muted-foreground: 215 20% 65%;
+  --border: 222 25% 18%;
+  --input: 222 25% 18%;
+  --ring: 217 91% 65%;
+
+  --primary: 217 91% 65%;
+  --primary-foreground: 222 47% 11%;
+  --secondary: 222 30% 14%;
+  --secondary-foreground: 210 40% 98%;
+
+  --success: 152 55% 45%;
+  --success-foreground: 222 47% 6%;
+  --warning: 38 92% 55%;
+  --warning-foreground: 26 60% 12%;
+  --destructive: 0 70% 60%;
+  --destructive-foreground: 222 47% 6%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+}
+
+::selection {
+  background: hsl(var(--primary) / 0.25);
+}
