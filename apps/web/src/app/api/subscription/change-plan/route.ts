@@ -23,7 +23,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Plano inválido." }, { status: 400 });
   }
 
-  if (!process.env.STRIPE_SECRET_KEY) {
+  // Guarded by NODE_ENV, not just the Stripe key: if this ever ran in a
+  // deployed production environment where Stripe setup was simply
+  // forgotten, any workspace owner could grant themselves the top plan
+  // for free indefinitely. The dev-mode escape hatch must be structurally
+  // impossible to reach in production, not just conditional on configuration.
+  if (!process.env.STRIPE_SECRET_KEY && process.env.NODE_ENV !== "production") {
     await prisma.subscription.update({
       where: { workspaceId: workspace.id },
       data: { planId: plan.id, status: "active" },

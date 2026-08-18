@@ -32,6 +32,13 @@ export function verifyOAuthState(state: string, marketplace: string): { workspac
 }
 
 function sign(payload: string): string {
-  const secret = process.env.AUTH_SECRET ?? "dev-secret-change-me";
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) {
+    // Never fall back to a hardcoded secret here: this HMAC is what stops an
+    // attacker from forging a `state` that binds their own OAuth connection
+    // to a victim's workspaceId (§8 multi-tenant isolation). A silent weak
+    // default would be worse than crashing loudly on misconfiguration.
+    throw new Error("AUTH_SECRET must be set to sign/verify OAuth state — refusing to use a weak default.");
+  }
   return createHmac("sha256", secret).update(payload).digest("hex").slice(0, 32);
 }

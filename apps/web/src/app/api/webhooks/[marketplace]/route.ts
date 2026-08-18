@@ -5,6 +5,7 @@ import { createProvider } from "@mastershopee/integrations";
 import { getIntegrationEnv } from "@/lib/integration-env";
 import { SLUG_TO_MARKETPLACE } from "@/lib/marketplace-slug";
 import { webhookProcessingQueue } from "@/lib/queue";
+import { getClientIp, isAllowed } from "@/lib/rate-limit";
 
 /**
  * Generic marketplace webhook receiver (§35). Validates signature where the
@@ -17,6 +18,17 @@ export async function POST(request: Request, { params }: { params: { marketplace
   const marketplace = SLUG_TO_MARKETPLACE[params.marketplace];
   if (!marketplace) {
     return NextResponse.json({ error: "Unknown marketplace" }, { status: 404 });
+  }
+
+  // Not every provider can verify a signature (only Shopee implements
+  // verifyWebhookSignature today — see packages/integrations/README.md).
+  // For the rest, `externalShopId` values (e.g. Mercado Livre's user_id)
+  // are guessable, so an unauthenticated caller could otherwise trigger
+  // real sync jobs against a real merchant's account by guessing IDs.
+  // Rate limit per marketplace+IP as defense in depth regardless of
+  // whether this specific delivery turns out to carry a valid signature.
+  if (!(await isAllowed(`webhook:${marketplace}:${getClientIp(request)}`, 60, 60))) {
+    return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
   const rawBody = await request.text();
