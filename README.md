@@ -71,9 +71,12 @@ Demo login after seeding: **demo@mastershopee.app / demo12345** (clearly `[DEMO]
 
 ```bash
 pnpm test          # runs every package's vitest suite (financial-engine, billing, integrations)
+pnpm --filter @mastershopee/worker test:integration   # worker jobs against a real Postgres/Redis — see below
 ```
 
 `financial-engine` and `billing` are the two packages explicitly required to have tests (§59-60): historical cost resolution, margin/ROAS math, Decimal precision, plan-limit enforcement, and subscription-state access rules are all covered — 53 tests total across `financial-engine`, `billing`, `shared`, `integrations`, and `apps/worker` as of this writing.
+
+**Worker integration tests** (`apps/worker/src/jobs/__tests__/integration/*.integration.test.ts`, run via `test:integration`, config in `apps/worker/vitest.integration.config.ts`): these run the DB-touching jobs — `compute-daily-metrics`, `process-webhook`, `check-alerts`, `sync-marketplace` — against a real local Postgres and Redis (BullMQ) instead of mocks, because the thing actually worth verifying is behavior a mock can't meaningfully exercise: Decimal precision surviving a real round-trip through Postgres, idempotent upserts, alert dedupe, and the `IntegrationSync.lockKey` unique-constraint lock. They're kept out of the default `pnpm test` (which CI/dev environments without that infra can still run) and use a disposable per-test workspace that cascades away in an `afterEach`, so they don't touch seed/demo data. Writing this harness caught a real bug: `lockKey` was set once at sync start and never cleared, so a marketplace account could only ever sync once per sync type for its entire lifetime — every later sync silently no-op'd. Fixed in `sync-marketplace.ts` by clearing the lock on every terminal state, not just success.
 
 ### Build / typecheck
 
@@ -159,6 +162,6 @@ This codebase includes the technical building blocks LGPD compliance needs (per-
 
 ## Roadmap (not yet started)
 
-FASE 6-10 from the original brief beyond what's listed as "implemented" above: wiring a real Sentry SDK behind `lib/observability.ts` (the seam and structured JSON logging are in place, `@sentry/nextjs` itself is not installed since no DSN is available in this environment), AI-driven insights (§66), and end-to-end integration tests for the BullMQ jobs against a real Postgres/Redis test instance (the jobs' pure logic — e.g. WhatsApp message formatting, timezone math — is unit-tested; the DB-touching parts of `sync-marketplace`/`compute-daily-metrics`/`check-alerts` are so far only verified by the manual live smoke tests described in this README's development history, not an automated harness).
+Wiring a real Sentry SDK behind `lib/observability.ts` (the seam and structured JSON logging are in place, `@sentry/nextjs` itself is not installed since no DSN is available in this environment). Everything else FASE 6-10 originally called out here — insights (§66), CSP, and a Postgres/Redis integration-test harness for the worker jobs — is now implemented; see the sections above.
 
-Already closed since the initial foundation commit: security headers + brute-force rate limiting on auth endpoints (§38), branded error/404 boundaries instead of Next's defaults (§44), the onboarding "first sync progress" UI (§82 — `SyncProgress` polls real `IntegrationSync` rows, no invented stage labels), and "Sincronizar agora"/"Reconectar" actions on the Integrations page (§33).
+Already closed since the initial foundation commit: security headers + brute-force rate limiting on auth endpoints (§38), a strict Content-Security-Policy (§38), branded error/404 boundaries instead of Next's defaults (§44), the onboarding "first sync progress" UI (§82 — `SyncProgress` polls real `IntegrationSync` rows, no invented stage labels), "Sincronizar agora"/"Reconectar" actions on the Integrations page (§33), rule-based Insights (§66), a real notification center (§50), and the `?plan=` pricing param carrying through to onboarding.

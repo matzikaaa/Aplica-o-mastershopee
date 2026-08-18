@@ -204,9 +204,13 @@ export async function runMarketplaceSync(data: MarketplaceSyncJobData): Promise<
       hasMoreOrders = page.hasMore;
     }
 
+    // lockKey is cleared on every terminal state, not just success: it's a
+    // unique column, so leaving it set here would mean this account+type
+    // could never sync again after this one run — the lock only needs to
+    // hold while status is RUNNING.
     await prisma.integrationSync.update({
       where: { id: syncRecord.id },
-      data: { status: "COMPLETED", finishedAt: new Date(), itemsProcessed, cursor: orderCursor.value },
+      data: { status: "COMPLETED", finishedAt: new Date(), itemsProcessed, cursor: orderCursor.value, lockKey: null },
     });
     await prisma.marketplaceAccount.update({
       where: { id: account.id },
@@ -219,7 +223,7 @@ export async function runMarketplaceSync(data: MarketplaceSyncJobData): Promise<
 
     await prisma.integrationSync.update({
       where: { id: syncRecord.id },
-      data: { status: itemsProcessed > 0 ? "PARTIAL" : "FAILED", finishedAt: new Date(), itemsProcessed, errorMessage: message },
+      data: { status: itemsProcessed > 0 ? "PARTIAL" : "FAILED", finishedAt: new Date(), itemsProcessed, errorMessage: message, lockKey: null },
     });
     await prisma.marketplaceAccount.update({
       where: { id: account.id },
