@@ -1,3 +1,32 @@
+const isDev = process.env.NODE_ENV !== "production";
+
+// §38. script-src and style-src both need 'unsafe-inline': Next.js App
+// Router renders its own inline <script> tags on every page (RSC payload
+// streaming) that a static header can't nonce — nonce-based CSP requires
+// reading the nonce via headers() in a Server Component, which forces every
+// page into dynamic rendering, including the marketing pages that are
+// static today. Given this app has no dangerouslySetInnerHTML, no raw HTML
+// rendering of user input, and no third-party script embeds (verified by
+// grep across apps/web/src), the marginal script-injection protection a
+// nonce would add isn't worth trading away static rendering for. The rest
+// of the policy — no cross-origin fetches/images/fonts, no framing, no
+// object embeds, restricted form targets — still meaningfully narrows the
+// attack surface.
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  `connect-src 'self'${isDev ? " ws://localhost:* http://localhost:*" : ""}`,
+  "frame-src 'none'",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "upgrade-insecure-requests",
+].join("; ");
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -21,6 +50,7 @@ const nextConfig = {
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          { key: "Content-Security-Policy", value: contentSecurityPolicy },
           {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains; preload",
