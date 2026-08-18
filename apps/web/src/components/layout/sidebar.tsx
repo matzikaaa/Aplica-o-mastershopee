@@ -16,6 +16,7 @@ import {
   CreditCard,
   HelpCircle,
   TrendingUp,
+  Lightbulb,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +27,7 @@ const NAV = [
   { href: "/costs", label: "Custos", icon: Receipt },
   { href: "/ads", label: "Publicidade", icon: Megaphone },
   { href: "/financial", label: "Financeiro", icon: Wallet },
+  { href: "/insights", label: "Insights", icon: Lightbulb },
   { href: "/reports", label: "Relatórios", icon: FileBarChart },
   { href: "/alerts", label: "Alertas", icon: Bell },
   { href: "/integrations", label: "Integrações", icon: Plug },
