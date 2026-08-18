@@ -1,7 +1,9 @@
 import IORedis from "ioredis";
 
 const redis = new IORedis(process.env.REDIS_URL ?? "redis://localhost:6379", {
-  maxRetriesPerRequest: null,
+  maxRetriesPerRequest: 1,
+  connectTimeout: 2000,
+  enableOfflineQueue: false,
   lazyConnect: true,
 });
 redis.on("error", () => {
