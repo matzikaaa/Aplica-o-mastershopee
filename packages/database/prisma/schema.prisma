@@ -23,6 +23,7 @@ model User {
   name               String
   avatarUrl          String?
   isSuperAdmin       Boolean   @default(false)
+  intendedPlanCode   String? // plan picked on /pricing before signup; preselects the onboarding plan step
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

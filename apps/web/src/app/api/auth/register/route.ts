@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { registerSchema } from "@mastershopee/shared";
 import { prisma } from "@mastershopee/database";
+import { PLAN_ORDER } from "@mastershopee/billing";
 import { hashPassword } from "@/lib/password";
 import { generateToken } from "@/lib/tokens";
 import { sendVerificationEmail } from "@/lib/email";
@@ -18,6 +19,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const { name, email, password } = parsed.data;
+  const requestedPlanCode = typeof body?.planCode === "string" ? body.planCode.toUpperCase() : null;
+  const intendedPlanCode = PLAN_ORDER.includes(requestedPlanCode as (typeof PLAN_ORDER)[number]) ? requestedPlanCode : null;
 
   const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   if (existing) {
@@ -29,7 +32,7 @@ export async function POST(request: Request) {
   }
 
   const user = await prisma.user.create({
-    data: { name, email: email.toLowerCase(), passwordHash: hashPassword(password) },
+    data: { name, email: email.toLowerCase(), passwordHash: hashPassword(password), intendedPlanCode },
   });
 
   const { raw, hash } = generateToken();

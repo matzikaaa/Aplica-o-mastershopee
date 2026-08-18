@@ -1,19 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { registerSchema, type RegisterInput } from "@mastershopee/shared";
+import { PLAN_ORDER } from "@mastershopee/billing";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { CheckCircle2 } from "lucide-react";
 
-export default function RegisterPage() {
+function RegisterForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
+
+  const planParam = useSearchParams().get("plan")?.toUpperCase();
+  const planCode = PLAN_ORDER.includes(planParam as (typeof PLAN_ORDER)[number]) ? planParam : null;
 
   const {
     register,
@@ -27,7 +32,7 @@ export default function RegisterPage() {
     const res = await fetch("/api/auth/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, planCode }),
     });
     setLoading(false);
     if (!res.ok) {
@@ -97,5 +102,13 @@ export default function RegisterPage() {
         </p>
       </form>
     </AuthShell>
+  );
+}
+
+export default function RegisterPage() {
+  return (
+    <Suspense>
+      <RegisterForm />
+    </Suspense>
   );
 }

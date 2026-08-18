@@ -7,9 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { cn, formatCurrency } from "@/lib/utils";
 
-export function CreateWorkspaceForm() {
+export function CreateWorkspaceForm({ defaultPlanCode }: { defaultPlanCode?: PlanCode }) {
   const router = useRouter();
-  const [planCode, setPlanCode] = useState<PlanCode>("PRO");
+  const [planCode, setPlanCode] = useState<PlanCode>(defaultPlanCode ?? "PRO");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

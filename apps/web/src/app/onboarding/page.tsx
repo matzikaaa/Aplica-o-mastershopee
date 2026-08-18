@@ -1,4 +1,5 @@
 import { prisma } from "@mastershopee/database";
+import { PLAN_ORDER, type PlanCode } from "@mastershopee/billing";
 import { TrendingUp } from "lucide-react";
 import { requireUser } from "@/lib/session";
 import { CreateWorkspaceForm } from "@/components/onboarding/create-workspace-form";
@@ -30,12 +31,15 @@ export default async function OnboardingPage() {
   );
 
   if (!membership) {
+    const defaultPlanCode = PLAN_ORDER.includes(user.intendedPlanCode as PlanCode)
+      ? (user.intendedPlanCode as PlanCode)
+      : undefined;
     return shell(
       <>
         <h1 className="text-xl font-semibold">Vamos criar sua central financeira</h1>
         <p className="mt-1 text-sm text-muted-foreground">Isso leva menos de um minuto.</p>
         <div className="mt-6">
-          <CreateWorkspaceForm />
+          <CreateWorkspaceForm defaultPlanCode={defaultPlanCode} />
         </div>
       </>,
     );
