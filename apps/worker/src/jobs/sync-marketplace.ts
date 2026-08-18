@@ -215,6 +215,7 @@ export async function runMarketplaceSync(data: MarketplaceSyncJobData): Promise<
   } catch (err) {
     const isNotImplemented = err instanceof MarketplaceNotImplementedError;
     const message = err instanceof Error ? err.message : "Erro desconhecido na sincronização.";
+    const newStatus = err instanceof MarketplaceApiError && err.httpStatus === 401 ? "TOKEN_EXPIRED" : "ERROR";
 
     await prisma.integrationSync.update({
       where: { id: syncRecord.id },
@@ -222,11 +223,25 @@ export async function runMarketplaceSync(data: MarketplaceSyncJobData): Promise<
     });
     await prisma.marketplaceAccount.update({
       where: { id: account.id },
-      data: {
-        status: err instanceof MarketplaceApiError && err.httpStatus === 401 ? "TOKEN_EXPIRED" : "ERROR",
-        lastErrorMessage: message,
-      },
+      data: { status: newStatus, lastErrorMessage: message },
     });
+
+    // Only notify on the transition into a failed state (§89 — friendly
+    // wording, no raw error text) — otherwise every retry within BullMQ's
+    // backoff window would spam a fresh notification for the same problem.
+    if (account.status !== "ERROR" && account.status !== "TOKEN_EXPIRED") {
+      await prisma.notification.create({
+        data: {
+          workspaceId: account.workspaceId,
+          title: `${account.marketplace} parou de sincronizar`,
+          body:
+            newStatus === "TOKEN_EXPIRED"
+              ? "Sua conexão expirou. Reconecte a conta em Integrações para continuar sincronizando."
+              : "Houve um problema ao sincronizar esta conta. Veja os detalhes em Integrações.",
+        },
+      });
+    }
+
     await prisma.integrationLog.create({
       data: {
         workspaceId: account.workspaceId,

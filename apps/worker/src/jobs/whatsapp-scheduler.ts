@@ -68,6 +68,9 @@ export async function runWhatsappScheduler(): Promise<void> {
         where: { id: report.id },
         data: { status: "sent", sentAt: new Date(), providerMessageId, payload: { message } },
       });
+      await prisma.notification.create({
+        data: { workspaceId: config.workspaceId, title: "Relatório diário enviado", body: `Resumo de ontem enviado para ${config.phoneNumber}.` },
+      });
     } catch (err) {
       await prisma.whatsappReport.update({
         where: { id: report.id },

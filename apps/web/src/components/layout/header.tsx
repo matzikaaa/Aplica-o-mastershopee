@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { signOut } from "next-auth/react";
-import { Bell, ChevronDown, LogOut, Settings, User as UserIcon } from "lucide-react";
+import { ChevronDown, LogOut, Settings, User as UserIcon } from "lucide-react";
+import { NotificationBell } from "./notification-bell";
 import { cn } from "@/lib/utils";
 
 export function Header({
@@ -39,9 +40,7 @@ export function Header({
       </div>
 
       <div className="flex items-center gap-2">
-        <button className="relative rounded-lg p-2 hover:bg-muted" aria-label="Notificações">
-          <Bell className="h-4.5 w-4.5" />
-        </button>
+        <NotificationBell />
 
         <div className="relative">
           <button

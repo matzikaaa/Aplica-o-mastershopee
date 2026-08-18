@@ -5,6 +5,7 @@ import { getIntegrationEnv } from "@/lib/integration-env";
 import { SLUG_TO_MARKETPLACE } from "@/lib/marketplace-slug";
 import { verifyOAuthState } from "@/lib/oauth-state";
 import { captureError } from "@/lib/observability";
+import { marketplaceSyncQueue } from "@/lib/queue";
 
 /** OAuth callback (§33, §39). Verifies state, exchanges the code, encrypts tokens before they ever touch the DB. */
 export async function GET(request: Request, { params }: { params: { marketplace: string } }) {
@@ -75,8 +76,17 @@ export async function GET(request: Request, { params }: { params: { marketplace:
       },
     });
 
-    // TODO(worker): enqueue an initial FULL sync job for `account.id` here once
-    // apps/worker's queue client is wired into the web app (§82 — first sync progress).
+    await prisma.notification.create({
+      data: {
+        workspaceId: verified.workspaceId,
+        title: "Nova integração realizada",
+        body: `${account.displayName} foi conectada. A primeira sincronização começou.`,
+      },
+    });
+
+    // Kicks off the first sync (§82) — the Integrations page's SyncProgress
+    // component polls the real IntegrationSync row this job writes.
+    await marketplaceSyncQueue.add("initial-full-sync", { marketplaceAccountId: account.id, type: "FULL" });
 
     return NextResponse.redirect(new URL("/integrations?connected=1", request.url));
   } catch (err) {
