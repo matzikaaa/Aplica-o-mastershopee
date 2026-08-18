@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
+import { SyncProgress } from "./sync-progress";
 import { relativeTime } from "@/lib/utils";
 
 type Status = "NOT_CONNECTED" | "CONNECTING" | "SYNCING" | "CONNECTED" | "ERROR" | "TOKEN_EXPIRED" | "DISCONNECTED";
@@ -52,6 +53,15 @@ export function MarketplaceCard({
     router.refresh();
   }
 
+  async function syncNow(accountId: string) {
+    await fetch(`/api/integrations/${slug}/sync`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountId }),
+    });
+    router.refresh();
+  }
+
   return (
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0">
@@ -71,9 +81,22 @@ export function MarketplaceCard({
               <p className="text-xs text-muted-foreground">
                 {account.lastSyncAt ? `Última sincronização ${relativeTime(account.lastSyncAt)}` : "Nunca sincronizado"}
               </p>
+              {account.status === "SYNCING" && <SyncProgress accountId={account.id} />}
             </div>
             <div className="flex items-center gap-2">
               <Badge variant={STATUS_CONFIG[account.status].variant}>{STATUS_CONFIG[account.status].label}</Badge>
+              {(account.status === "CONNECTED" || account.status === "ERROR") && (
+                <Button size="sm" variant="outline" onClick={() => syncNow(account.id)}>
+                  Sincronizar agora
+                </Button>
+              )}
+              {account.status === "TOKEN_EXPIRED" && (
+                <a href={`/api/integrations/${slug}/connect`}>
+                  <Button size="sm" variant="outline">
+                    Reconectar
+                  </Button>
+                </a>
+              )}
               <Button size="sm" variant="outline" onClick={() => setConfirmDisconnect(account.id)}>
                 Desconectar
               </Button>

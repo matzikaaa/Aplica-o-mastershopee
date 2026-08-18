@@ -12,3 +12,8 @@ const connection = new IORedis(process.env.REDIS_URL ?? "redis://localhost:6379"
 });
 
 export const webhookProcessingQueue = new Queue<{ webhookEventId: string }>("webhook-processing", { connection });
+
+export const marketplaceSyncQueue = new Queue<{
+  marketplaceAccountId: string;
+  type: "FULL" | "INCREMENTAL" | "PRODUCTS" | "ORDERS" | "ADS" | "FEES";
+}>("marketplace-sync", { connection });
