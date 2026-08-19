@@ -17,6 +17,7 @@ import {
   HelpCircle,
   TrendingUp,
   Lightbulb,
+  Boxes,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ const NAV = [
   { href: "/dashboard", label: "Visão Geral", icon: LayoutDashboard },
   { href: "/orders", label: "Pedidos", icon: ShoppingCart },
   { href: "/products", label: "Produtos", icon: Package },
+  { href: "/stock", label: "Estoque", icon: Boxes },
   { href: "/costs", label: "Custos", icon: Receipt },
   { href: "/ads", label: "Publicidade", icon: Megaphone },
   { href: "/financial", label: "Financeiro", icon: Wallet },

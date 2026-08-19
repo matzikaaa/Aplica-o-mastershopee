@@ -38,6 +38,9 @@ importers:
       '@mastershopee/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations
+      '@mastershopee/inventory':
+        specifier: workspace:*
+        version: link:../../packages/inventory
       '@mastershopee/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -138,6 +141,9 @@ importers:
       '@mastershopee/integrations':
         specifier: workspace:*
         version: link:../../packages/integrations
+      '@mastershopee/inventory':
+        specifier: workspace:*
+        version: link:../../packages/inventory
       '@mastershopee/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -222,6 +228,22 @@ importers:
         version: 2.1.9(@types/node@20.19.43)
 
   packages/integrations:
+    dependencies:
+      '@mastershopee/shared':
+        specifier: workspace:*
+        version: link:../shared
+    devDependencies:
+      '@types/node':
+        specifier: ^20.14.15
+        version: 20.19.43
+      typescript:
+        specifier: ^5.5.4
+        version: 5.9.3
+      vitest:
+        specifier: ^2.0.5
+        version: 2.1.9(@types/node@20.19.43)
+
+  packages/inventory:
     dependencies:
       '@mastershopee/shared':
         specifier: workspace:*

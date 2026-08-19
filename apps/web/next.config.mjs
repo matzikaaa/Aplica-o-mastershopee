@@ -36,6 +36,7 @@ const nextConfig = {
     "@mastershopee/financial-engine",
     "@mastershopee/billing",
     "@mastershopee/integrations",
+    "@mastershopee/inventory",
   ],
   eslint: {
     ignoreDuringBuilds: true,

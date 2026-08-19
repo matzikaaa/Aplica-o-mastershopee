@@ -18,3 +18,12 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export * from "@prisma/client";
+
+export {
+  ensureStockItem,
+  recordStockMovement,
+  applySaleToStock,
+  reverseSaleFromStock,
+  unitsSoldPerProduct,
+  type RecordMovementInput,
+} from "./stock";

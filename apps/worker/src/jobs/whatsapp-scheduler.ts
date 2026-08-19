@@ -1,4 +1,5 @@
 import { prisma } from "@mastershopee/database";
+import { isWhatsappConfigured, sendWhatsappMessage, WHATSAPP_NOT_CONFIGURED } from "../whatsapp.js";
 
 /**
  * §22-24, §64: runs every minute (see scheduler.ts). For each workspace
@@ -50,12 +51,12 @@ export async function runWhatsappScheduler(): Promise<void> {
 
     const message = buildDailySummaryMessage(config.workspace.name, metric);
 
-    if (!process.env.WHATSAPP_ACCESS_TOKEN || !process.env.WHATSAPP_PHONE_NUMBER_ID) {
+    if (!isWhatsappConfigured()) {
       await prisma.whatsappReport.update({
         where: { id: report.id },
         data: {
           status: "failed",
-          errorMessage: "WhatsApp Business Platform não configurado (WHATSAPP_ACCESS_TOKEN / WHATSAPP_PHONE_NUMBER_ID pendentes).",
+          errorMessage: WHATSAPP_NOT_CONFIGURED,
           payload: { message },
         },
       });
@@ -112,25 +113,3 @@ export function zonedTime(timezone: string): Date {
   return new Date(Number(get("year")), Number(get("month")) - 1, Number(get("day")), Number(get("hour")), Number(get("minute")), Number(get("second")));
 }
 
-/** WhatsApp Business Platform (Cloud API) — https://developers.facebook.com/docs/whatsapp/cloud-api */
-async function sendWhatsappMessage(toPhoneNumber: string, text: string): Promise<string> {
-  const res = await fetch(`https://graph.facebook.com/v19.0/${process.env.WHATSAPP_PHONE_NUMBER_ID}/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      messaging_product: "whatsapp",
-      to: toPhoneNumber.replace(/\D/g, ""),
-      type: "text",
-      text: { body: text },
-    }),
-  });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`WhatsApp API respondeu ${res.status}: ${body}`);
-  }
-  const data = (await res.json()) as { messages?: { id: string }[] };
-  return data.messages?.[0]?.id ?? "unknown";
-}

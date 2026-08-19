@@ -5,6 +5,7 @@ import { runMarketplaceSync } from "./jobs/sync-marketplace.js";
 import { computeDailyMetrics } from "./jobs/compute-daily-metrics.js";
 import { runWhatsappScheduler } from "./jobs/whatsapp-scheduler.js";
 import { runAlertChecks } from "./jobs/check-alerts.js";
+import { runStockLevelChecks } from "./jobs/check-stock-levels.js";
 import { processWebhookEvent } from "./jobs/process-webhook.js";
 import { registerScheduledJobs, enqueueMetricsForAllWorkspaces } from "./scheduler.js";
 
@@ -63,6 +64,7 @@ for (const worker of [marketplaceSyncWorker, computeMetricsWorker, whatsappWorke
 // Alert checks piggyback on the same 15-minute cadence as metrics — no dedicated queue needed.
 setInterval(() => {
   runAlertChecks().catch((err) => log("alerts.error", { error: err.message }));
+  runStockLevelChecks().catch((err) => log("stock.error", { error: err.message }));
 }, 15 * 60 * 1000);
 
 await registerScheduledJobs();

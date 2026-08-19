@@ -99,6 +99,8 @@ model Workspace {
   auditLogs           AuditLog[]
   notifications       Notification[]
   usageCounters       UsageCounter[]
+  stockItems          StockItem[]
+  stockMovements      StockMovement[]
 
   onboardingCompletedAt DateTime?
 }
@@ -341,6 +343,7 @@ model Product {
   costs               ProductCost[]
   orderItems          OrderItem[]
   productMetrics      ProductMetric[]
+  stockItem           StockItem?
 
   @@unique([workspaceId, sku])
 }
@@ -377,6 +380,78 @@ model ProductCost {
   createdByUserId   String?
 
   @@index([productId, effectiveFrom])
+}
+
+// ─────────────────────────────────────────────────────────────
+// STOCK / INVENTORY
+// ─────────────────────────────────────────────────────────────
+
+// Current balance per product. `quantity` is a denormalized running total —
+// StockMovement is the source of truth, and both are always written inside
+// the same transaction so they cannot drift.
+model StockItem {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  productId   String    @unique
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  quantity    Int       @default(0)
+
+  // Reorder configuration. The alert fires when projected days of cover
+  // drop to leadTimeDays + safetyDays: "my supplier takes 5 days and I want
+  // 3 days of slack" => warn while 8 days of stock remain.
+  supplierName String?
+  leadTimeDays Int      @default(0)
+  safetyDays   Int      @default(0)
+
+  // Set when a low-stock alert fires, cleared on any restock, so the same
+  // shortage is not re-announced on every scheduler tick.
+  lowStockNotifiedAt DateTime?
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  movements   StockMovement[]
+
+  @@index([workspaceId])
+}
+
+enum StockMovementType {
+  PURCHASE_IN
+  SALE_OUT
+  RETURN_IN
+  CANCELLATION_IN
+  ADJUSTMENT
+}
+
+// Append-only ledger. `quantity` is signed (+ inbound, - outbound) and
+// `balanceAfter` freezes the running total at the time of the movement, so
+// the history stays readable even after later corrections.
+model StockMovement {
+  id           String            @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  stockItemId  String
+  stockItem    StockItem         @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  type         StockMovementType
+  quantity     Int
+  balanceAfter Int
+
+  // Idempotency for marketplace sales: a plain unique column rather than a
+  // relation, so the ledger survives an order being deleted. Marketplace
+  // syncs re-upsert the same order repeatedly, and this constraint is what
+  // makes a second sync of the same sale fail fast instead of deducting the
+  // same units twice.
+  orderItemId  String?           @unique
+  note         String?
+  createdByUserId String?
+  occurredAt   DateTime          @default(now())
+  createdAt    DateTime          @default(now())
+
+  @@index([workspaceId, occurredAt])
+  @@index([stockItemId, occurredAt])
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -666,6 +741,7 @@ model WhatsappReport {
 // ─────────────────────────────────────────────────────────────
 
 enum AlertRuleType {
+  STOCK_LOW
   NEGATIVE_MARGIN_PRODUCT
   AD_SPEND_THRESHOLD
   NET_MARGIN_BELOW

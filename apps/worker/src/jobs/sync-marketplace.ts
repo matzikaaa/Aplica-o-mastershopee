@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import Decimal from "decimal.js";
-import { prisma } from "@mastershopee/database";
+import { prisma, applySaleToStock, reverseSaleFromStock } from "@mastershopee/database";
 import {
   createProvider,
   decryptSecret,
@@ -12,6 +12,9 @@ import {
 } from "@mastershopee/integrations";
 import type { MarketplaceSyncJobData } from "../queues.js";
 import { getIntegrationEnv } from "../integration-env.js";
+
+// Statuses where the marketplace has handed the units back to the seller.
+const STOCK_RELEASING_STATUSES = ["CANCELED", "REFUNDED", "RETURNED"];
 
 // One bucket per marketplace type, shared across all accounts of that
 // marketplace within this worker process (§34). A production deployment
@@ -180,11 +183,12 @@ export async function runMarketplaceSync(data: MarketplaceSyncJobData): Promise<
           });
           const unitCostSnapshot = product ? await resolveCostSnapshot(product.id, o.orderedAt) : new Decimal(0);
 
+          const orderItemId = `${order.id}:${item.externalSku}:${item.externalVariationId ?? ""}`;
           await prisma.orderItem.upsert({
-            where: { id: `${order.id}:${item.externalSku}:${item.externalVariationId ?? ""}` },
+            where: { id: orderItemId },
             update: {},
             create: {
-              id: `${order.id}:${item.externalSku}:${item.externalVariationId ?? ""}`,
+              id: orderItemId,
               orderId: order.id,
               productId: product?.id,
               externalSku: item.externalSku,
@@ -197,6 +201,32 @@ export async function runMarketplaceSync(data: MarketplaceSyncJobData): Promise<
               taxAmount: item.taxAmount,
             },
           });
+
+          // Stock follows the sale automatically, keyed by orderItemId so
+          // re-syncing the same order never deducts the same units twice
+          // (§87). Only products already known to the workspace move stock —
+          // a marketplace SKU with no matching Product has nothing to debit.
+          if (product) {
+            if (STOCK_RELEASING_STATUSES.includes(o.status)) {
+              await reverseSaleFromStock({
+                workspaceId: account.workspaceId,
+                productId: product.id,
+                orderItemId,
+                units: item.quantity,
+                type: o.status === "RETURNED" ? "RETURN_IN" : "CANCELLATION_IN",
+                note: `Pedido ${o.externalOrderId} — ${o.status.toLowerCase()}`,
+              });
+            } else {
+              await applySaleToStock({
+                workspaceId: account.workspaceId,
+                productId: product.id,
+                orderItemId,
+                units: item.quantity,
+                occurredAt: o.orderedAt,
+                note: `Venda ${account.marketplace} — pedido ${o.externalOrderId}`,
+              });
+            }
+          }
         }
         itemsProcessed++;
       }
