@@ -23,11 +23,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
     where: { workspaceId: workspace.id, status: { not: "DISCONNECTED" } },
     select: { status: true },
   });
-  const syncStatus = accounts.some((a) => a.status === "ERROR" || a.status === "TOKEN_EXPIRED")
-    ? "error"
-    : accounts.some((a) => a.status === "SYNCING")
-      ? "syncing"
-      : "synced";
+  const syncStatus = accounts.length === 0
+    ? "none"
+    : accounts.some((a) => a.status === "ERROR" || a.status === "TOKEN_EXPIRED")
+      ? "error"
+      : accounts.some((a) => a.status === "SYNCING")
+        ? "syncing"
+        : "synced";
 
   return (
     <div className="flex h-screen overflow-hidden">

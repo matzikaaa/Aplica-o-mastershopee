@@ -15,16 +15,20 @@ export function Header({
   workspaceName: string;
   userName: string;
   userEmail: string;
-  syncStatus?: "synced" | "syncing" | "error";
+  syncStatus?: "synced" | "syncing" | "error" | "none";
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
 
+  // "none" is its own state on purpose: with no account connected there is
+  // nothing to have synced, and showing "Sincronizado" there would assert a
+  // status that doesn't exist (§61, §96).
   const statusConfig = {
+    none: { label: "Nenhum marketplace conectado", dot: "bg-muted-foreground/50" },
     synced: { label: "Sincronizado", dot: "bg-success" },
     syncing: { label: "Sincronizando...", dot: "bg-warning animate-pulse" },
     error: { label: "Erro de sincronização", dot: "bg-destructive" },
   } as const;
-  const status = statusConfig[syncStatus ?? "synced"];
+  const status = statusConfig[syncStatus ?? "none"];
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-card px-6">

@@ -59,13 +59,22 @@ cp .env.example .env          # fill in what you have; see "Pending credentials"
 docker compose up -d          # postgres + redis (or run them natively)
 
 pnpm db:migrate                # applies packages/database/prisma/migrations
-pnpm db:seed                   # demo user + workspace + 30 days of [DEMO]-labeled orders
+pnpm db:seed                   # plan catalog ONLY — no sample data
 
 pnpm dev                       # apps/web on http://localhost:3000
 pnpm dev:worker                # apps/worker (separate terminal)
 ```
 
-Demo login after seeding: **demo@mastershopee.app / demo12345** (clearly `[DEMO]`-prefixed data throughout — §75, §94).
+Register at `/register` and the dashboard stays genuinely empty until a real marketplace account is connected — no invented orders, revenue or metrics anywhere (§75, §94).
+
+### Demo data (opt-in)
+
+```bash
+pnpm db:seed:demo    # synthetic user/workspace/orders — login: demo@mastershopee.app / demo12345
+pnpm db:purge:demo   # removes all of it, leaves the plan catalog intact
+```
+
+Kept deliberately separate from `pnpm db:seed` so no install ever shows fabricated numbers by default. Everything it writes is `[DEMO]`-labelled, and it refuses to run under `NODE_ENV=production` (override with `ALLOW_DEMO_SEED=true` only for a throwaway environment) — note it marks marketplace accounts `CONNECTED` without any real OAuth connection, which must never reach a production database.
 
 ### Tests
 
@@ -133,7 +142,9 @@ PostgreSQL via Prisma. Money is **always** `Decimal(14,4)` (never `float`/`numbe
 ```bash
 pnpm db:migrate     # create/apply a migration from schema changes
 pnpm db:studio      # Prisma Studio GUI
-pnpm db:seed        # demo data — see packages/database/prisma/seed.ts
+pnpm db:seed        # plan catalog only (production-safe) — prisma/seed.ts
+pnpm db:seed:demo   # opt-in synthetic data — prisma/seed-demo.ts
+pnpm db:purge:demo  # remove synthetic data — prisma/purge-demo.ts
 ```
 
 ## Environment variables
