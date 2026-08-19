@@ -153,6 +153,8 @@ See `.env.example` for the full list with inline documentation of what each one 
 
 ## Deployment notes
 
+**Passo a passo completo (Vercel + Neon + Upstash, tudo em plano gratuito): [`DEPLOYMENT.md`](./DEPLOYMENT.md)** — inclui as variáveis exatas, migrations em produção e o que configurar no console da Shopee.
+
 - `apps/web` is a standard Next.js app — deployable to any Node host or a platform with Next.js support. Requires `DATABASE_URL`, `AUTH_SECRET`, `CREDENTIALS_ENCRYPTION_KEY` at minimum to boot into a usable (if integration-less) state.
 - `apps/worker` is a long-running Node process (`pnpm --filter @mastershopee/worker start`) — needs `REDIS_URL` and the same `DATABASE_URL`. Run it as a separate service/container from the web app; it is not request-driven.
 - Run `pnpm db:migrate:deploy` (via `prisma migrate deploy`) as part of your deploy pipeline, never `migrate dev` in production.
