@@ -5,6 +5,7 @@ export function getIntegrationEnv(): IntegrationEnv {
     SHOPEE_PARTNER_ID: process.env.SHOPEE_PARTNER_ID,
     SHOPEE_PARTNER_KEY: process.env.SHOPEE_PARTNER_KEY,
     SHOPEE_REDIRECT_URL: process.env.SHOPEE_REDIRECT_URL,
+    SHOPEE_ENV: process.env.SHOPEE_ENV === "test" ? "test" : "live",
     MERCADOLIVRE_APP_ID: process.env.MERCADOLIVRE_APP_ID,
     MERCADOLIVRE_CLIENT_SECRET: process.env.MERCADOLIVRE_CLIENT_SECRET,
     MERCADOLIVRE_REDIRECT_URI: process.env.MERCADOLIVRE_REDIRECT_URI,

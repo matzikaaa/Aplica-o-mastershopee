@@ -32,17 +32,27 @@ import {
  *     implemented until that access exists.
  */
 
-const PARTNER_HOST = "https://partner.shopeemobile.com";
+const LIVE_HOST = "https://partner.shopeemobile.com";
+const TEST_HOST = "https://partner.test-stable.shopeemobile.com";
 
 export class ShopeeProvider implements MarketplaceProvider {
   readonly marketplace = "SHOPEE";
   readonly supportsWebhooks = true;
 
+  private readonly partnerHost: string;
+
   constructor(
     private readonly partnerId: string,
     private readonly partnerKey: string,
     private readonly redirectUrl: string,
-  ) {}
+    // Shopee issues separate partner_id/partner_key per environment (visible
+    // as "Test" vs "Live" in the Open Platform console) — a test partner_id
+    // called against the live host (or vice versa) fails with
+    // "invalid_partner_id", not a clearer environment-mismatch error.
+    env: "test" | "live" = "live",
+  ) {
+    this.partnerHost = env === "test" ? TEST_HOST : LIVE_HOST;
+  }
 
   private sign(path: string, timestamp: number, accessToken?: string, shopId?: string): string {
     const base = [this.partnerId, path, timestamp, accessToken, shopId].filter((v) => v !== undefined).join("");
@@ -73,7 +83,7 @@ export class ShopeeProvider implements MarketplaceProvider {
     const path = "/api/v2/shop/auth_partner";
     const timestamp = Math.floor(Date.now() / 1000);
     const sign = this.sign(path, timestamp);
-    const url = new URL(PARTNER_HOST + path);
+    const url = new URL(this.partnerHost + path);
     url.searchParams.set("partner_id", this.partnerId);
     url.searchParams.set("timestamp", String(timestamp));
     url.searchParams.set("sign", sign);
@@ -86,7 +96,7 @@ export class ShopeeProvider implements MarketplaceProvider {
     const path = "/api/v2/auth/token/get";
     const timestamp = Math.floor(Date.now() / 1000);
     const sign = this.sign(path, timestamp);
-    const res = await fetch(`${PARTNER_HOST}${path}?partner_id=${this.partnerId}&timestamp=${timestamp}&sign=${sign}`, {
+    const res = await fetch(`${this.partnerHost}${path}?partner_id=${this.partnerId}&timestamp=${timestamp}&sign=${sign}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code, partner_id: Number(this.partnerId), shop_id: shopId ? Number(shopId) : undefined }),
@@ -117,7 +127,7 @@ export class ShopeeProvider implements MarketplaceProvider {
     const path = "/api/v2/auth/access_token/get";
     const timestamp = Math.floor(Date.now() / 1000);
     const sign = this.sign(path, timestamp);
-    const res = await fetch(`${PARTNER_HOST}${path}?partner_id=${this.partnerId}&timestamp=${timestamp}&sign=${sign}`, {
+    const res = await fetch(`${this.partnerHost}${path}?partner_id=${this.partnerId}&timestamp=${timestamp}&sign=${sign}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -156,7 +166,7 @@ export class ShopeeProvider implements MarketplaceProvider {
     const sign = this.sign(path, timestamp, credentials.accessToken, credentials.externalShopId);
     const offset = cursor.value ? Number(cursor.value) : 0;
 
-    const url = new URL(PARTNER_HOST + path);
+    const url = new URL(this.partnerHost + path);
     url.searchParams.set("partner_id", this.partnerId);
     url.searchParams.set("timestamp", String(timestamp));
     url.searchParams.set("sign", sign);
@@ -207,7 +217,7 @@ export class ShopeeProvider implements MarketplaceProvider {
     // Shopee's order list is time-window based (max 15 days per call) rather
     // than offset-based like Mercado Livre — cursor stores the last window's
     // `next_cursor` token issued by Shopee itself.
-    const url = new URL(PARTNER_HOST + path);
+    const url = new URL(this.partnerHost + path);
     url.searchParams.set("partner_id", this.partnerId);
     url.searchParams.set("timestamp", String(timestamp));
     url.searchParams.set("sign", sign);

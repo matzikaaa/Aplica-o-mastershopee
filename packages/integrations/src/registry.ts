@@ -9,6 +9,10 @@ export interface IntegrationEnv {
   SHOPEE_PARTNER_ID?: string;
   SHOPEE_PARTNER_KEY?: string;
   SHOPEE_REDIRECT_URL?: string;
+  // "test" while the app is still in Shopee's Test/Sandbox tier (before
+  // Live approval) — a Test partner_id called against the Live host fails
+  // with "invalid_partner_id". Defaults to "live".
+  SHOPEE_ENV?: "test" | "live";
   MERCADOLIVRE_APP_ID?: string;
   MERCADOLIVRE_CLIENT_SECRET?: string;
   MERCADOLIVRE_REDIRECT_URI?: string;
@@ -32,6 +36,7 @@ export function createProvider(type: MarketplaceType, env: IntegrationEnv): Mark
         env.SHOPEE_PARTNER_ID ?? "",
         env.SHOPEE_PARTNER_KEY ?? "",
         env.SHOPEE_REDIRECT_URL ?? "",
+        env.SHOPEE_ENV ?? "live",
       );
     case "MERCADO_LIVRE":
       return new MercadoLivreProvider(
