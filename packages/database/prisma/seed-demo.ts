@@ -129,9 +129,19 @@ async function main() {
   ]);
   const proPlan = plans.find((p) => p.code === "PRO")!;
 
+  // Reset the credentials on every run rather than `update: {}`. This seed
+  // advertises a specific login, so it has to guarantee that login works —
+  // if the address was already taken (e.g. someone registered it by hand
+  // through /register, with their own password and no verified e-mail), a
+  // no-op update leaves an account that silently rejects the documented
+  // password, which is worse than not seeding at all.
   const user = await prisma.user.upsert({
     where: { email: "demo@mastershopee.app" },
-    update: {},
+    update: {
+      name: "Marcos (Demo)",
+      passwordHash: hashPassword("demo12345"),
+      emailVerifiedAt: new Date(),
+    },
     create: {
       email: "demo@mastershopee.app",
       name: "Marcos (Demo)",
