@@ -23,8 +23,16 @@ Tudo abaixo cabe no plano gratuito de cada serviço.
 ## 1. Banco de dados (Neon)
 
 1. Crie conta em https://neon.tech e um projeto novo (região mais próxima: `AWS South America (São Paulo)` se disponível, senão `US East`).
-2. Copie a **connection string** que aparece após criar o projeto — formato `postgresql://user:senha@ep-xxx.neon.tech/neondb?sslmode=require`.
+2. Copie a **connection string**. O Neon oferece duas — pegue a **pooled**, que
+   tem `-pooler` no host: `postgresql://user:senha@ep-xxx-pooler.neon.tech/neondb?sslmode=require`.
+   (Na tela do Neon costuma haver um seletor "Pooled connection" / "Connection pooling".)
 3. Guarde: será o `DATABASE_URL`.
+
+> **Use a string pooled, não a direta.** Cada invocação de função serverless na
+> Vercel abre sua própria conexão; sem o pooler, um pico de tráfego estoura o
+> limite de conexões do Postgres e as requisições passam a falhar com
+> "too many connections". A string direta (sem `-pooler`) serve para
+> migrations rodadas da sua máquina, onde é uma conexão só.
 
 ## 2. Redis (Upstash)
 
