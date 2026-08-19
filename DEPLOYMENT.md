@@ -75,7 +75,7 @@ Rode duas vezes: o primeiro valor vai em `AUTH_SECRET`, o segundo em
 | Variável | Valor |
 |---|---|
 | `APP_URL` | `https://SEU-APP.vercel.app` |
-| `AUTH_URL` | `https://SEU-APP.vercel.app` |
+| `NEXTAUTH_URL` | `https://SEU-APP.vercel.app` |
 | `SHOPEE_REDIRECT_URL` | `https://SEU-APP.vercel.app/api/integrations/shopee/callback` |
 
 8. **Redeploy** (Deployments → menu `...` do último deploy → Redeploy) para as
