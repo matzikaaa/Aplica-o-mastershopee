@@ -40,7 +40,6 @@ export class ShopeeProvider implements MarketplaceProvider {
   readonly supportsWebhooks = true;
 
   private readonly partnerHost: string;
-  private readonly hmacKey: Buffer;
 
   constructor(
     private readonly partnerId: string,
@@ -53,19 +52,11 @@ export class ShopeeProvider implements MarketplaceProvider {
     env: "test" | "live" = "live",
   ) {
     this.partnerHost = env === "test" ? TEST_HOST : LIVE_HOST;
-    // The Open Platform console displays the key as "shpk" + 60 hex chars.
-    // "shpk" isn't valid hex (s/h/p/k are outside 0-9a-f), so it's a type
-    // tag, not part of the key material — the actual HMAC key is the raw
-    // bytes the hex encodes, not the hex text itself. Falls back to the raw
-    // string for any key that isn't in this shape (defensive, not
-    // documented anywhere — verified empirically against a real account).
-    const hexBody = /^shpk[0-9a-f]{60}$/i.test(partnerKey) ? partnerKey.slice(4) : null;
-    this.hmacKey = hexBody ? Buffer.from(hexBody, "hex") : Buffer.from(partnerKey, "utf8");
   }
 
   private sign(path: string, timestamp: number, accessToken?: string, shopId?: string): string {
     const base = [this.partnerId, path, timestamp, accessToken, shopId].filter((v) => v !== undefined).join("");
-    return createHmac("sha256", this.hmacKey).update(base).digest("hex");
+    return createHmac("sha256", this.partnerKey).update(base).digest("hex");
   }
 
   /**
@@ -81,7 +72,7 @@ export class ShopeeProvider implements MarketplaceProvider {
     const provided = headers["authorization"] ?? headers["Authorization"];
     if (!provided || !this.partnerKey) return false;
 
-    const expected = createHmac("sha256", this.hmacKey).update(rawBody).digest("hex");
+    const expected = createHmac("sha256", this.partnerKey).update(rawBody).digest("hex");
     const a = Buffer.from(provided);
     const b = Buffer.from(expected);
     if (a.length !== b.length) return false;
