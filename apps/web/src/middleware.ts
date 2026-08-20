@@ -31,6 +31,7 @@ export const config = {
     "/products/:path*",
     "/costs/:path*",
     "/stock/:path*",
+    "/pricing/:path*",
     "/orders/:path*",
     "/ads/:path*",
     "/financial/:path*",

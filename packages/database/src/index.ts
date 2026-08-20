@@ -27,3 +27,9 @@ export {
   unitsSoldPerProduct,
   type RecordMovementInput,
 } from "./stock";
+
+export {
+  effectiveMarketplaceRates,
+  allEffectiveMarketplaceRates,
+  type EffectiveRates,
+} from "./marketplace-rates";

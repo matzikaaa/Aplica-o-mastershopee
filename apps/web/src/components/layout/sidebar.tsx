@@ -18,6 +18,7 @@ import {
   TrendingUp,
   Lightbulb,
   Boxes,
+  Calculator,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ const NAV = [
   { href: "/products", label: "Produtos", icon: Package },
   { href: "/stock", label: "Estoque", icon: Boxes },
   { href: "/costs", label: "Custos", icon: Receipt },
+  { href: "/pricing", label: "Calculadora", icon: Calculator },
   { href: "/ads", label: "Publicidade", icon: Megaphone },
   { href: "/financial", label: "Financeiro", icon: Wallet },
   { href: "/insights", label: "Insights", icon: Lightbulb },
