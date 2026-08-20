@@ -3,7 +3,15 @@
 import { useMemo, useState } from "react";
 import { Calculator, Package, Plus, Trash2, Info } from "lucide-react";
 import Decimal from "decimal.js";
-import { suggestPrice, simulatePrice, calculatePackagingCost } from "@mastershopee/financial-engine";
+import {
+  suggestPrice,
+  simulatePrice,
+  calculatePackagingCost,
+  SHOPEE_FEE_SCHEDULE,
+  suggestPriceForSchedule,
+  simulatePriceForSchedule,
+  resolveBand,
+} from "@mastershopee/financial-engine";
 import { MARKETPLACE_LABELS, type MarketplaceType } from "@mastershopee/shared";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -44,6 +52,9 @@ const brl = (v: Decimal | string | number) =>
 
 export function PriceCalculator({ options }: { options: MarketplaceRateOption[] }) {
   const [marketplace, setMarketplace] = useState<MarketplaceType>("SHOPEE");
+  // Only Shopee has a banded schedule we could source; the others rely on
+  // rates measured from the workspace's own orders.
+  const [useSchedule, setUseSchedule] = useState(true);
   const [tab, setTab] = useState<"price" | "packaging">("price");
   const [mode, setMode] = useState<"margin" | "price">("margin");
 
@@ -106,6 +117,32 @@ export function PriceCalculator({ options }: { options: MarketplaceRateOption[] 
   }, [rows]);
 
   const packagingCost = packagingApplied && packaging ? packaging.totalPerShipment.toFixed(4) : num(packagingManual);
+
+  const scheduleActive = marketplace === "SHOPEE" && useSchedule;
+
+  // Banded mode: commission and the per-item fixed fee both come from the
+  // price band, so they are not free-typed here.
+  const scheduleResult = useMemo(() => {
+    if (!scheduleActive) return null;
+    const base = {
+      unitCost: num(unitCost),
+      packagingCost,
+      otherCosts: num(otherCosts),
+      taxPercent: num(taxValue),
+      estimatedAdSpendPercent: num(adsValue),
+    };
+    if (mode === "margin") {
+      return {
+        kind: "margin" as const,
+        data: suggestPriceForSchedule({ ...base, desiredMarginPercent: num(desiredMargin) }, SHOPEE_FEE_SCHEDULE),
+      };
+    }
+    if (num(salePrice) <= 0) return null;
+    return {
+      kind: "price" as const,
+      data: simulatePriceForSchedule({ ...base, price: num(salePrice) }, SHOPEE_FEE_SCHEDULE),
+    };
+  }, [scheduleActive, unitCost, packagingCost, otherCosts, taxValue, adsValue, desiredMargin, salePrice, mode]);
 
   const result = useMemo(() => {
     const base = {
@@ -204,17 +241,41 @@ export function PriceCalculator({ options }: { options: MarketplaceRateOption[] 
               </div>
             </Section>
 
+            {marketplace === "SHOPEE" && (
+              <label className="flex cursor-pointer items-start gap-2 rounded-lg border border-border bg-card px-4 py-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={useSchedule}
+                  onChange={(e) => setUseSchedule(e.target.checked)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium">Usar tabela de faixas da Shopee</span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    Comissão e taxa fixa por item mudam conforme a faixa de preço. {SHOPEE_FEE_SCHEDULE.label} —{" "}
+                    {SHOPEE_FEE_SCHEDULE.source}. Confira na sua conta antes de decidir preço.
+                  </span>
+                </span>
+              </label>
+            )}
+
             <Section
-              title="Descontos do marketplace"
+              title={scheduleActive ? "Impostos e anúncios" : "Descontos do marketplace"}
               hint={
-                effective
-                  ? `Preenchido com o que a ${MARKETPLACE_LABELS[marketplace]} realmente cobrou nos seus últimos ${effective.periodDays} dias (${effective.sampleOrders} pedidos). Edite se sua categoria tiver taxa diferente.`
-                  : `Sem histórico de vendas na ${MARKETPLACE_LABELS[marketplace]} ainda — informe as taxas do seu contrato. Não usamos tabela genérica de comissão porque ela varia por categoria.`
+                scheduleActive
+                  ? "Comissão e taxa fixa vêm da faixa de preço. Informe apenas o que é seu: imposto e a média de ADS."
+                  : effective
+                    ? `Preenchido com o que a ${MARKETPLACE_LABELS[marketplace]} realmente cobrou nos seus últimos ${effective.periodDays} dias (${effective.sampleOrders} pedidos). Edite se sua categoria tiver taxa diferente.`
+                    : `Sem histórico de vendas na ${MARKETPLACE_LABELS[marketplace]} ainda — informe as taxas do seu contrato. Não usamos tabela genérica de comissão porque ela varia por categoria.`
               }
             >
-              <div className="grid gap-3 sm:grid-cols-4">
-                <Field label="Comissão (%)" value={commissionValue} onChange={(v) => touchRates(setCommission, v)} placeholder="0" />
-                <Field label="Taxa fixa (%)" value={feeValue} onChange={(v) => touchRates(setFee, v)} placeholder="0" />
+              <div className={cn("grid gap-3", scheduleActive ? "sm:grid-cols-2" : "sm:grid-cols-4")}>
+                {!scheduleActive && (
+                  <>
+                    <Field label="Comissão (%)" value={commissionValue} onChange={(v) => touchRates(setCommission, v)} placeholder="0" />
+                    <Field label="Taxa fixa (%)" value={feeValue} onChange={(v) => touchRates(setFee, v)} placeholder="0" />
+                  </>
+                )}
                 <Field label="Imposto (%)" value={taxValue} onChange={(v) => touchRates(setTax, v)} placeholder="0" />
                 <Field label="ADS (%)" value={adsValue} onChange={(v) => touchRates(setAds, v)} placeholder="0" />
               </div>
@@ -239,7 +300,11 @@ export function PriceCalculator({ options }: { options: MarketplaceRateOption[] 
             </Section>
           </div>
 
-          <ResultPanel result={result} mode={mode} />
+          {scheduleActive ? (
+            <ScheduleResultPanel result={scheduleResult} mode={mode} />
+          ) : (
+            <ResultPanel result={result} mode={mode} />
+          )}
         </div>
       )}
     </div>
@@ -481,6 +546,160 @@ function Row({ label, value, muted = false }: { label: string; value: string; mu
     <div className={cn("flex justify-between", muted && "text-muted-foreground")}>
       <span className="text-muted-foreground">{label}</span>
       <span className="tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+type ScheduleResult =
+  | { kind: "margin"; data: ReturnType<typeof suggestPriceForSchedule> }
+  | { kind: "price"; data: ReturnType<typeof simulatePriceForSchedule> };
+
+function bandLabel(band: { minPrice: unknown; maxPrice: unknown; commissionPercent: unknown; fixedFeePerItem: unknown }) {
+  const to = band.maxPrice === null ? "acima" : `até ${brl(Number(band.maxPrice) - 0.01)}`;
+  return `${brl(band.minPrice as number)} ${to} · ${String(band.commissionPercent)}% + ${brl(band.fixedFeePerItem as number)}/item`;
+}
+
+/**
+ * Banded results. Shows every self-consistent price rather than one, because
+ * a target margin can genuinely be reachable in two bands — and warns when a
+ * price sits just above a band boundary, where a few cents less earns more.
+ */
+function ScheduleResultPanel({ result, mode }: { result: ScheduleResult | null; mode: "margin" | "price" }) {
+  if (!result) {
+    return (
+      <Card>
+        <CardContent className="pt-6 text-sm text-muted-foreground">
+          Informe o preço de venda para ver o resultado.
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (result.kind === "margin") {
+    const { viable } = result.data;
+
+    if (viable.length === 0) {
+      return (
+        <Card className="h-fit lg:sticky lg:top-6">
+          <CardContent className="space-y-3 pt-6">
+            <p className="text-sm font-medium">Essa margem não é alcançável</p>
+            <p className="text-sm text-muted-foreground">
+              Em nenhuma faixa de preço da Shopee o preço calculado cairia dentro da própria faixa. Reduza a margem
+              desejada ou o custo do produto.
+            </p>
+          </CardContent>
+        </Card>
+      );
+    }
+
+    return (
+      <Card className="h-fit lg:sticky lg:top-6">
+        <CardContent className="space-y-4 pt-6">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {viable.length > 1 ? "Preços possíveis" : "Preço recomendado"}
+          </p>
+
+          {viable.map((v, i) => (
+            <div key={String(v.band.minPrice)} className={cn("space-y-1", i > 0 && "border-t border-border pt-4")}>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-semibold tabular-nums tracking-tight">
+                  {brl(v.result.recommendedPrice.toFixed(2))}
+                </span>
+                {i === 0 && viable.length > 1 && <Badge variant="success">menor preço</Badge>}
+              </div>
+              <p className="text-xs text-muted-foreground">{bandLabel(v.band)}</p>
+              <p className="text-sm text-muted-foreground">
+                Lucro: <span className="font-medium text-foreground">{brl(v.result.estimatedProfit.toFixed(2))}</span>
+              </p>
+            </div>
+          ))}
+
+          {viable.length > 1 && (
+            <div className="rounded-lg border border-border bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+              Dois preços atingem a mesma margem porque a comissão e a taxa fixa mudam de faixa. O menor costuma ser
+              mais competitivo.
+            </div>
+          )}
+
+          <Estimate />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const sim = result.data;
+  if (!sim) {
+    return (
+      <Card>
+        <CardContent className="pt-6 text-sm text-muted-foreground">Preço fora das faixas da tabela.</CardContent>
+      </Card>
+    );
+  }
+
+  const profit = Number(sim.result.estimatedProfit.toFixed(2));
+  const margin = Number(sim.result.estimatedMarginPercent.toString());
+
+  // The band starts at minPrice; anything just above it may be worse than a
+  // price just below, where the cheaper fixed fee still applies.
+  const bandStart = Number(sim.band.minPrice);
+  const price = Number(sim.result.price.toFixed(2));
+  const justAboveBoundary = bandStart > 0 && price - bandStart <= bandStart * 0.08;
+
+  return (
+    <Card className="h-fit lg:sticky lg:top-6">
+      <CardContent className="space-y-5 pt-6">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Lucro por venda</p>
+          <p
+            className={cn(
+              "mt-1 text-4xl font-semibold tabular-nums tracking-tight",
+              profit < 0 && "text-destructive",
+            )}
+          >
+            {brl(profit)}
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Margem:{" "}
+            <span className={cn("font-medium", margin < 0 ? "text-destructive" : "text-foreground")}>
+              {margin.toFixed(2)}%
+            </span>
+          </p>
+        </div>
+
+        <div className="space-y-2 border-t border-border pt-4 text-sm">
+          <Row label="Faixa aplicada" value={`${String(sim.band.commissionPercent)}%`} />
+          <Row label="Taxa fixa por item" value={brl(sim.fixedFeeApplied.toFixed(2))} />
+          <Row label="Custos fixos por unidade" value={brl(sim.result.fixedCosts.toFixed(2))} />
+          <Row label="Descontos do marketplace" value={brl(sim.result.percentualDeductions.toFixed(2))} />
+        </div>
+
+        {justAboveBoundary && (
+          <div className="rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs">
+            Este preço está logo acima da virada de faixa em {brl(bandStart)}. Vender por{" "}
+            {brl(bandStart - 0.01)} cai na faixa anterior, com taxa fixa menor — compare os dois antes de decidir.
+          </div>
+        )}
+
+        {profit < 0 && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            Neste preço você perde dinheiro em cada venda.
+          </div>
+        )}
+
+        <Estimate />
+      </CardContent>
+    </Card>
+  );
+}
+
+function Estimate() {
+  return (
+    <div className="flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <p>
+        Estimativa: ADS é média do seu histórico, não custo fixo por venda. Frete não entra — varia por destino e
+        regra de subsídio.
+      </p>
     </div>
   );
 }

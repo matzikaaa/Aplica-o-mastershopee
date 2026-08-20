@@ -7,3 +7,4 @@ export {
   type PackagingCostResult,
   type PackagingLine,
 } from "./packaging";
+export * from "./fee-schedule";
