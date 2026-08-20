@@ -7,6 +7,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { CheckCircle2, FileSpreadsheet, TriangleAlert, Upload } from "lucide-react";
 import {
+  detectHeaderRow,
   guessMapping,
   type ImportField,
   type ImportSummary,
@@ -54,13 +55,48 @@ export function ImportWizard({
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  function ingest(rawRows: Record<string, string>[], name: string) {
-    const clean = rawRows.filter((r) => Object.values(r).some((v) => String(v ?? "").trim() !== ""));
+  /**
+   * Turn a raw sheet (array of arrays) into records keyed by column name.
+   *
+   * Reading the header positionally rather than trusting row 1 is what lets
+   * Shopee's ad report work: it opens with seven lines of store metadata
+   * before the real header.
+   */
+  function ingest(matrix: unknown[][], name: string) {
+    const headerIndex = detectHeaderRow(matrix);
+    const headerRow = matrix[headerIndex] ?? [];
+
+    // Shopee repeats column names in the same file ("Desconto do vendedor"
+    // twice, "Cidade" twice). Keyed by name alone, the second silently
+    // overwrites the first — so repeats get a suffix and stay distinguishable
+    // in the mapping dropdown.
+    const seen = new Map<string, number>();
+    const cols = headerRow.map((cell, i) => {
+      const base = String(cell ?? "").trim() || `Coluna ${i + 1}`;
+      const count = (seen.get(base) ?? 0) + 1;
+      seen.set(base, count);
+      return count === 1 ? base : `${base} (${count})`;
+    });
+
+    const clean: Record<string, string>[] = [];
+    for (const raw of matrix.slice(headerIndex + 1)) {
+      const record: Record<string, string> = {};
+      let hasValue = false;
+      cols.forEach((col, i) => {
+        const value = String(raw?.[i] ?? "").trim();
+        record[col] = value;
+        if (value !== "") hasValue = true;
+      });
+      if (hasValue) clean.push(record);
+    }
+
     if (clean.length === 0) {
-      setParseError("A planilha não tem linhas com dados.");
+      setParseError(
+        "O arquivo tem cabeçalho mas nenhuma linha de dados. Confira o período e o filtro de status na exportação do marketplace.",
+      );
       return;
     }
-    const cols = Object.keys(clean[0]!);
+
     setHeaders(cols);
     setRows(clean);
     setMapping(guessMapping(cols, fields));
@@ -79,8 +115,8 @@ export function ImportWizard({
         try {
           const wb = XLSX.read(e.target?.result, { type: "array", cellDates: true });
           const sheet = wb.Sheets[wb.SheetNames[0]!]!;
-          const json = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { raw: false, defval: "" });
-          ingest(json, file.name);
+          const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: "" });
+          ingest(matrix, file.name);
         } catch {
           setParseError("Não foi possível ler este arquivo Excel. Tente exportar como CSV.");
         }
@@ -89,8 +125,8 @@ export function ImportWizard({
       return;
     }
 
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
+    Papa.parse<string[]>(file, {
+      header: false,
       skipEmptyLines: true,
       complete: (parsed) => ingest(parsed.data, file.name),
       error: () => setParseError("Não foi possível ler este CSV."),

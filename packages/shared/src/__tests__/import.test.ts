@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ORDER_IMPORT_FIELDS,
+  ADS_IMPORT_FIELDS,
   SKU_DISCOVERY_FIELDS,
   collectDiscoveredSkus,
+  detectHeaderRow,
   PRODUCT_IMPORT_FIELDS,
   guessMapping,
   normalizeOrderStatus,
@@ -189,5 +191,106 @@ describe("collectDiscoveredSkus — catálogo a partir do relatório", () => {
     const mapping = guessMapping(["Nº do pedido", "SKU do produto", "Nome do produto", "Quantidade"], SKU_DISCOVERY_FIELDS);
     expect(mapping.sku).toBe("SKU do produto");
     expect(mapping.name).toBe("Nome do produto");
+  });
+});
+
+// Cabeçalhos copiados de exportações reais da Shopee (agosto/2026).
+const SHOPEE_ORDER_HEADERS = [
+  "ID do pedido", "Status do pedido", "Hot Listing", "Status da Devolução / Reembolso",
+  "Número de rastreamento", "Opção de envio", "Método de envio", "Data prevista de envio",
+  "Tempo de Envio", "Data de criação do pedido", "Hora do pagamento do pedido",
+  "Nº de referência do SKU principal", "Nome do Produto", "Número de referência SKU",
+  "Nome da variação", "Preço original", "Preço acordado", "Quantidade", "Returned quantity",
+  "Subtotal do produto", "Desconto do vendedor", "Desconto do vendedor", "Peso total SKU",
+  "Número de produtos pedidos", "Valor Total", "Taxa de envio pagas pelo comprador",
+  "Desconto de Frete Aproximado", "Taxa de Envio Reversa", "Taxa de transação",
+  "Taxa de comissão bruta", "Taxa de comissão líquida", "Taxa de serviço bruta",
+  "Taxa de serviço líquida", "Total global", "Valor estimado do frete",
+];
+
+const SHOPEE_ADS_HEADERS = [
+  "#", "Nome do Anúncio", "Status", "Tipos de Anúncios", "ID do produto", "Criativo",
+  "Método de Lance", "Posicionamento", "Data de Início", "Data de Encerramento",
+  "Impressões", "Cliques", "CTR", "Adicionar ao carrinho", "Taxa de adição ao carrinho",
+  "Conversões", "Conversões Diretas", "Itens Vendidos", "GMV", "Despesas", "ROAS", "ACOS",
+];
+
+describe("guessMapping — exportação real da Shopee", () => {
+  const mapping = guessMapping(SHOPEE_ORDER_HEADERS, ORDER_IMPORT_FIELDS);
+
+  it("pega a data de criação do pedido, não a data prevista de envio", () => {
+    expect(mapping.orderedAt).toBe("Data de criação do pedido");
+  });
+
+  it("pega o SKU da variação, que é o preenchido, e não o SKU principal em branco", () => {
+    expect(mapping.sku).toBe("Número de referência SKU");
+  });
+
+  it("usa o subtotal do item como receita, não o valor total com frete do comprador", () => {
+    expect(mapping.grossAmount).toBe("Subtotal do produto");
+  });
+
+  it("separa comissão de taxa de serviço em vez de cair no frete do comprador", () => {
+    expect(mapping.commissionAmount).toBe("Taxa de comissão bruta");
+    expect(mapping.marketplaceFeeAmount).toBe("Taxa de serviço bruta");
+  });
+
+  it("não adivinha frete pago pelo vendedor — essa coluna não existe nesse relatório", () => {
+    expect(mapping.shippingSubsidizedByMerchant).toBeNull();
+  });
+
+  it("nunca aponta dois campos para a mesma coluna", () => {
+    const used = Object.values(mapping).filter((v): v is string => v !== null);
+    expect(new Set(used).size).toBe(used.length);
+  });
+
+  it("reconhece o relatório de anúncios da Shopee", () => {
+    const ads = guessMapping(SHOPEE_ADS_HEADERS, ADS_IMPORT_FIELDS);
+    expect(ads.campaignName).toBe("Nome do Anúncio");
+    expect(ads.spend).toBe("Despesas");
+    expect(ads.attributedRevenue).toBe("GMV");
+    expect(ads.orders).toBe("Conversões");
+  });
+});
+
+describe("detectHeaderRow — arquivos com preâmbulo", () => {
+  it("pula as linhas de metadados do relatório de anúncios da Shopee", () => {
+    const matrix = [
+      ["Relatório de Todos os Anúncios CPC - Shopee Brasil"],
+      ["Nome de Usuário", "archistoreoficial"],
+      ["Nome da loja", "Archi Store"],
+      ["ID da Loja", "1834121824"],
+      ["Data de Criação do Relatório", "20/08/2026 19:36"],
+      ["Período", "01/05/2026 - 29/07/2026"],
+      [],
+      SHOPEE_ADS_HEADERS,
+      ["1", "Campanha X"],
+    ];
+    expect(detectHeaderRow(matrix)).toBe(7);
+  });
+
+  it("mantém a primeira linha quando o arquivo já começa no cabeçalho", () => {
+    expect(detectHeaderRow([SHOPEE_ORDER_HEADERS, ["260821UCHMVRK5", "A Enviar"]])).toBe(0);
+  });
+
+  it("prefere a linha mais larga mais acima quando há empate", () => {
+    expect(detectHeaderRow([["a", "b", "c"], ["d", "e", "f"]])).toBe(0);
+  });
+});
+
+describe("normalizeOrderStatus — status reais da Shopee", () => {
+  it("trata 'A Enviar' como pago e ainda não enviado", () => {
+    expect(normalizeOrderStatus("A Enviar")).toBe("PAID");
+    expect(normalizeOrderStatus("Envio pendente")).toBe("PAID");
+  });
+
+  it("trata 'Não pago' como pedido criado, sem receita", () => {
+    expect(normalizeOrderStatus("Não pago")).toBe("CREATED");
+  });
+
+  it("continua reconhecendo enviado, concluído e cancelado", () => {
+    expect(normalizeOrderStatus("Enviado")).toBe("SHIPPED");
+    expect(normalizeOrderStatus("Concluído")).toBe("DELIVERED");
+    expect(normalizeOrderStatus("Cancelado")).toBe("CANCELED");
   });
 });
