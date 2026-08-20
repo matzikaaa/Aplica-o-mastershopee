@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
@@ -12,7 +13,7 @@ import {
   type MarketplaceType,
   MARKETPLACE_LABELS,
 } from "@mastershopee/shared";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -32,12 +33,15 @@ export function ImportWizard({
   needsMarketplace = false,
   title,
   description,
+  nextStep,
 }: {
   fields: ImportField[];
   endpoint: string;
   needsMarketplace?: boolean;
   title: string;
   description: string;
+  /** Where the operator should go once this import lands. */
+  nextStep?: { href: string; label: string };
 }) {
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
@@ -146,7 +150,7 @@ export function ImportWizard({
   }
 
   if (summary) {
-    return <SummaryView summary={summary} fileName={fileName} onReset={reset} />;
+    return <SummaryView summary={summary} fileName={fileName} onReset={reset} nextStep={nextStep} />;
   }
 
   return (
@@ -307,10 +311,12 @@ function SummaryView({
   summary,
   fileName,
   onReset,
+  nextStep,
 }: {
   summary: ImportSummary;
   fileName: string;
   onReset: () => void;
+  nextStep?: { href: string; label: string };
 }) {
   const total = summary.created + summary.updated;
   return (
@@ -325,6 +331,17 @@ function SummaryView({
           </p>
         </div>
       </div>
+
+      {summary.note && (
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-muted/30 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">{summary.note}</p>
+          {nextStep && (
+            <Link href={nextStep.href} className={buttonVariants({ size: "sm", variant: "outline", className: "shrink-0" })}>
+              {nextStep.label}
+            </Link>
+          )}
+        </div>
+      )}
 
       {summary.errors.length > 0 && (
         <div className="space-y-2">

@@ -6,7 +6,9 @@ import { Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from "@
 import { AddCostDialog } from "@/components/costs/add-cost-dialog";
 import { ImportCostsDialog } from "@/components/costs/import-costs-dialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { Receipt } from "lucide-react";
+import Link from "next/link";
+import { Receipt, TriangleAlert } from "lucide-react";
+import { buttonVariants } from "@/components/ui/button";
 
 export default async function CostsPage() {
   const { workspace } = await requireWorkspace();
@@ -16,6 +18,14 @@ export default async function CostsPage() {
     include: { costs: { orderBy: { effectiveFrom: "desc" }, take: 1 } },
     orderBy: { name: "asc" },
   });
+
+  // Products without a cost come first: they are the ones blocking a real
+  // profit number, so they are what the operator actually came here to fix.
+  const sorted = [...products].sort((a, b) => {
+    const pending = Number(a.costs.length > 0) - Number(b.costs.length > 0);
+    return pending !== 0 ? pending : a.name.localeCompare(b.name, "pt-BR");
+  });
+  const missingCost = products.filter((p) => p.costs.length === 0).length;
 
   return (
     <div className="space-y-6">
@@ -29,11 +39,31 @@ export default async function CostsPage() {
         <ImportCostsDialog />
       </div>
 
+      {missingCost > 0 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-warning" />
+            <div>
+              <p className="text-sm font-medium">
+                {missingCost} {missingCost === 1 ? "produto sem custo cadastrado" : "produtos sem custo cadastrado"}
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Enquanto o custo não estiver aqui, o lucro desses SKUs fica marcado como incompleto — não estimamos por
+                você. Eles estão no topo da lista.
+              </p>
+            </div>
+          </div>
+          <Link href="/import" className={buttonVariants({ size: "sm", variant: "outline", className: "shrink-0" })}>
+            Importar planilha
+          </Link>
+        </div>
+      )}
+
       {products.length === 0 ? (
         <EmptyState
           icon={Receipt}
           title="Nenhum produto ainda"
-          description="Produtos aparecem aqui automaticamente após a primeira sincronização com um marketplace."
+          description="Conecte um marketplace ou use Importar planilha › Descobrir SKUs para montar o catálogo a partir dos seus próprios relatórios."
         />
       ) : (
         <Card>
@@ -49,7 +79,7 @@ export default async function CostsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {products.map((p) => {
+              {sorted.map((p) => {
                 const current = p.costs[0];
                 return (
                   <TableRow key={p.id}>

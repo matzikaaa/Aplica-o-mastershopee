@@ -20,6 +20,54 @@ export interface ImportField {
   aliases: string[];
 }
 
+export interface DiscoveredSku {
+  sku: string;
+  /** Null when no report column carried a name — the caller decides the fallback. */
+  name: string | null;
+  /** Spreadsheet line where this SKU first appeared, for error reporting. */
+  row: number;
+}
+
+/**
+ * Collapse a marketplace report down to its distinct SKUs.
+ *
+ * A sales report has one line per sale, so the same SKU appears dozens of
+ * times, sometimes with the name filled in on only some of the lines. The
+ * first occurrence sets the position; the first non-empty name wins.
+ */
+export function collectDiscoveredSkus(rows: { sku?: string; name?: string }[]): {
+  skus: DiscoveredSku[];
+  blankRows: number[];
+} {
+  const bySku = new Map<string, DiscoveredSku>();
+  const blankRows: number[] = [];
+
+  rows.forEach((row, index) => {
+    const line = index + 2; // +1 header row, +1 for 1-based counting
+    const sku = row.sku?.trim();
+    const name = row.name?.trim() || null;
+
+    if (!sku) {
+      blankRows.push(line);
+      return;
+    }
+
+    const existing = bySku.get(sku);
+    if (!existing) {
+      bySku.set(sku, { sku, name, row: line });
+    } else if (!existing.name && name) {
+      existing.name = name;
+    }
+  });
+
+  return { skus: [...bySku.values()], blankRows };
+}
+
+export const SKU_DISCOVERY_FIELDS: ImportField[] = [
+  { key: "sku", label: "SKU", required: true, hint: "A mesma coluna de SKU que aparece no relatório de pedidos", aliases: ["sku", "sku do produto", "sku de referencia", "codigo", "cod", "referencia", "codigo do produto"] },
+  { key: "name", label: "Nome do produto", required: false, hint: "Se o relatório não tiver, o SKU vira o nome provisório", aliases: ["nome", "produto", "descricao", "titulo", "nome do produto", "nome do anuncio"] },
+];
+
 export const PRODUCT_IMPORT_FIELDS: ImportField[] = [
   { key: "sku", label: "SKU", required: true, aliases: ["sku", "codigo", "cod", "referencia", "sku do produto"] },
   { key: "name", label: "Nome do produto", required: true, aliases: ["nome", "produto", "descricao", "titulo", "nome do produto"] },
@@ -180,4 +228,6 @@ export interface ImportSummary {
   updated: number;
   skipped: number;
   errors: ImportRowError[];
+  /** Optional closing note from the importer: what the operator should do next. */
+  note?: string;
 }

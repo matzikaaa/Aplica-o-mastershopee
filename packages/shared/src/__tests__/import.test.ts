@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   ORDER_IMPORT_FIELDS,
+  SKU_DISCOVERY_FIELDS,
+  collectDiscoveredSkus,
   PRODUCT_IMPORT_FIELDS,
   guessMapping,
   normalizeOrderStatus,
@@ -133,5 +135,59 @@ describe("normalizeOrderStatus", () => {
   it("assume pago quando o status está vazio ou é desconhecido", () => {
     expect(normalizeOrderStatus("")).toBe("PAID");
     expect(normalizeOrderStatus("qualquer coisa")).toBe("PAID");
+  });
+});
+
+describe("collectDiscoveredSkus — catálogo a partir do relatório", () => {
+  it("colapsa um relatório de vendas em SKUs distintos", () => {
+    const { skus } = collectDiscoveredSkus([
+      { sku: "SAC-100", name: "Saco de lixo 100L" },
+      { sku: "SAC-100", name: "Saco de lixo 100L" },
+      { sku: "COP-50", name: "Copo 50ml" },
+      { sku: "SAC-100", name: "Saco de lixo 100L" },
+    ]);
+
+    expect(skus.map((s) => s.sku)).toEqual(["SAC-100", "COP-50"]);
+    expect(skus[0]!.row).toBe(2);
+    expect(skus[1]!.row).toBe(4);
+  });
+
+  it("aproveita o primeiro nome preenchido quando o relatório o omite em algumas linhas", () => {
+    const { skus } = collectDiscoveredSkus([
+      { sku: "SAC-100", name: "  " },
+      { sku: "SAC-100", name: "Saco de lixo 100L" },
+      { sku: "SAC-100", name: "Saco de lixo 100 litros" },
+    ]);
+
+    expect(skus).toHaveLength(1);
+    expect(skus[0]!.name).toBe("Saco de lixo 100L");
+  });
+
+  it("devolve nome nulo quando nenhuma linha traz nome, sem inventar um", () => {
+    const { skus } = collectDiscoveredSkus([{ sku: "COP-50" }]);
+    expect(skus[0]!.name).toBeNull();
+  });
+
+  it("aponta as linhas sem SKU em vez de descartá-las em silêncio", () => {
+    const { skus, blankRows } = collectDiscoveredSkus([
+      { sku: "COP-50" },
+      { sku: "   " },
+      { name: "linha de total" },
+    ]);
+
+    expect(skus).toHaveLength(1);
+    expect(blankRows).toEqual([3, 4]);
+  });
+
+  it("trata espaços em volta do SKU como o mesmo produto", () => {
+    const { skus } = collectDiscoveredSkus([{ sku: " COP-50 " }, { sku: "COP-50" }]);
+    expect(skus).toHaveLength(1);
+    expect(skus[0]!.sku).toBe("COP-50");
+  });
+
+  it("reconhece as colunas de SKU e nome de uma exportação de pedidos", () => {
+    const mapping = guessMapping(["Nº do pedido", "SKU do produto", "Nome do produto", "Quantidade"], SKU_DISCOVERY_FIELDS);
+    expect(mapping.sku).toBe("SKU do produto");
+    expect(mapping.name).toBe("Nome do produto");
   });
 });
