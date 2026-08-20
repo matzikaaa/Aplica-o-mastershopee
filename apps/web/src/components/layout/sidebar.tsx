@@ -19,6 +19,7 @@ import {
   Lightbulb,
   Boxes,
   Calculator,
+  Upload,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ const NAV = [
   { href: "/orders", label: "Pedidos", icon: ShoppingCart },
   { href: "/products", label: "Produtos", icon: Package },
   { href: "/stock", label: "Estoque", icon: Boxes },
+  { href: "/import", label: "Importar", icon: Upload },
   { href: "/costs", label: "Custos", icon: Receipt },
   { href: "/pricing", label: "Calculadora", icon: Calculator },
   { href: "/ads", label: "Publicidade", icon: Megaphone },
