@@ -112,7 +112,9 @@ export default async function StockPage() {
                 return (
                   <tr key={item.id} className="border-b border-border last:border-0">
                     <td className="px-4 py-3">
-                      <div className="font-medium">{item.product.name}</div>
+                      <Link href={`/stock/${item.productId}`} className="font-medium hover:underline">
+                        {item.product.name}
+                      </Link>
                       <div className="text-xs text-muted-foreground">
                         {item.product.sku}
                         {item.supplierName ? ` · ${item.supplierName}` : ""}

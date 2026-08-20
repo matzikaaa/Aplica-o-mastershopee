@@ -741,7 +741,6 @@ model WhatsappReport {
 // ─────────────────────────────────────────────────────────────
 
 enum AlertRuleType {
-  STOCK_LOW
   NEGATIVE_MARGIN_PRODUCT
   AD_SPEND_THRESHOLD
   NET_MARGIN_BELOW

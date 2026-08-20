@@ -356,6 +356,47 @@ async function main() {
     }
   }
 
+  // ── Stock ──────────────────────────────────────────────────────────
+  // Opening balances derived from the demand the loop above actually
+  // generated, so the coverage figures on the stock screen are consistent
+  // with the orders sitting next to them. One product is deliberately left
+  // short to exercise the reorder alert.
+  for (const [index, p] of products.entries()) {
+    const soldUnits = await prisma.orderItem.aggregate({
+      where: { productId: p.id, order: { workspaceId: workspace.id } },
+      _sum: { quantity: true },
+    });
+    const perDay = (soldUnits._sum.quantity ?? 0) / days;
+    const targetDays = index === 0 ? 3 : 25; // first product runs short
+    const opening = Math.max(1, Math.round(perDay * targetDays));
+
+    const stockItem = await prisma.stockItem.upsert({
+      where: { productId: p.id },
+      update: { quantity: opening, leadTimeDays: 5, safetyDays: 3, supplierName: "[DEMO] Distribuidora Alfa" },
+      create: {
+        workspaceId: workspace.id,
+        productId: p.id,
+        quantity: opening,
+        leadTimeDays: 5,
+        safetyDays: 3,
+        supplierName: "[DEMO] Distribuidora Alfa",
+      },
+    });
+
+    await prisma.stockMovement.deleteMany({ where: { stockItemId: stockItem.id } });
+    await prisma.stockMovement.create({
+      data: {
+        workspaceId: workspace.id,
+        stockItemId: stockItem.id,
+        type: "PURCHASE_IN",
+        quantity: opening,
+        balanceAfter: opening,
+        note: "[DEMO] Carga inicial",
+        occurredAt: new Date(Date.now() - 30 * 24 * 3600 * 1000),
+      },
+    });
+  }
+
   console.log("Demo seed complete — every figure above is synthetic, not real sales data.");
   console.log("Login: demo@mastershopee.app / demo12345");
   console.log("Remove it later with: pnpm db:purge:demo");
