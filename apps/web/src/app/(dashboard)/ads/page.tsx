@@ -9,6 +9,7 @@ import { Megaphone, Lock } from "lucide-react";
 import Link from "next/link";
 import { buttonVariants } from "@/components/ui/button";
 import { ManualAdSpendDialog } from "@/components/ads/manual-ad-spend-dialog";
+import { DeleteCampaignButton } from "@/components/ads/delete-campaign-button";
 import { Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from "@/components/ui/table";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
@@ -103,6 +104,7 @@ export default async function AdsPage() {
                 <TableHead>Gasto</TableHead>
                 <TableHead>Receita</TableHead>
                 <TableHead>ROAS</TableHead>
+                <TableHead className="text-right">Ação</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -122,6 +124,9 @@ export default async function AdsPage() {
                   <TableCell>{formatCurrency(row.total)}</TableCell>
                   <TableCell>{row.revenue > 0 ? formatCurrency(row.revenue) : "—"}</TableCell>
                   <TableCell>{row.roas === null ? "—" : `${row.roas.toFixed(2)}x`}</TableCell>
+                  <TableCell className="text-right">
+                    <DeleteCampaignButton campaignId={row.id} name={row.name} total={formatCurrency(row.total)} />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
