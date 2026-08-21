@@ -38,7 +38,29 @@ primeiras o revisor lê.
 > vale uma revisão jurídica — principalmente as partes de LGPD, já que o app
 > processa nome, CPF e endereço de compradores vindos das exportações.
 
-## 2. O formulário de Go-Live
+## 2. A conta de teste que a Shopee pede
+
+O formulário pede URL, usuário e senha — o revisor entra e olha.
+
+**Não passe a sua conta real.** Esse login expõe nome, CPF e endereço dos seus
+compradores, vindos das exportações, para um terceiro. E uma conta vazia faz o
+revisor ver um app sem nada e reprovar.
+
+Use os dados demo, que já vêm marcados `[DEMO]` e não se passam por reais.
+No banco de **produção**, depois do deploy:
+
+```bash
+pnpm db:seed:demo
+pnpm db:set-password demo@mastershopee.app 'uma-senha-forte-e-unica'
+```
+
+A troca de senha não é opcional: `demo12345` está publicada no README deste
+repositório, que é público. Sem trocar, qualquer pessoa que leia o repositório
+entra na conta que você deu à Shopee.
+
+Quando a revisão terminar, `pnpm db:purge:demo` remove tudo.
+
+## 3. O formulário de Go-Live
 
 No console (open.shopee.com) → seu app → **Go Live**.
 
@@ -67,7 +89,7 @@ Peça só o que usa. Pedir escopo a mais atrasa a revisão.
 **Público-alvo**
 > Vendedores brasileiros da Shopee, uso próprio da própria loja.
 
-## 3. Depois de aprovado
+## 4. Depois de aprovado
 
 A Shopee emite um **partner_id e partner_key novos**, do ambiente Live. Os de
 teste continuam existindo e **não funcionam** contra o host Live — a troca é

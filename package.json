@@ -19,6 +19,7 @@
     "db:seed": "pnpm --filter @mastershopee/database seed",
     "db:seed:demo": "pnpm --filter @mastershopee/database seed:demo",
     "db:verify-user": "pnpm --filter @mastershopee/database verify:user",
+    "db:set-password": "pnpm --filter @mastershopee/database set:password",
     "db:purge:demo": "pnpm --filter @mastershopee/database purge:demo",
     "db:studio": "pnpm --filter @mastershopee/database studio",
     "worker": "pnpm --filter @mastershopee/worker start"

@@ -17,7 +17,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "echo skip",
     "test": "echo skip",
-    "verify:user": "tsx prisma/verify-user.ts"
+    "verify:user": "tsx prisma/verify-user.ts",
+    "set:password": "tsx prisma/set-password.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.18.0",

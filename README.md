@@ -81,6 +81,11 @@ pnpm db:verify-user voce@exemplo.com   # refuses to run with NODE_ENV=production
 ```bash
 pnpm db:seed:demo    # synthetic user/workspace/orders — login: demo@mastershopee.app / demo12345
 pnpm db:purge:demo   # removes all of it, leaves the plan catalog intact
+
+# That password is published here, which makes it a local-only credential. On
+# any deployed instance — including the login handed to a marketplace reviewer
+# — change it first, or the account is open to anyone who reads this file:
+pnpm db:set-password demo@mastershopee.app 'senha-forte-unica'
 ```
 
 Kept deliberately separate from `pnpm db:seed` so no install ever shows fabricated numbers by default. Everything it writes is `[DEMO]`-labelled, and it refuses to run under `NODE_ENV=production` (override with `ALLOW_DEMO_SEED=true` only for a throwaway environment) — note it marks marketplace accounts `CONNECTED` without any real OAuth connection, which must never reach a production database.
