@@ -16,7 +16,17 @@ import { Button } from "@/components/ui/button";
  * without costs would miss it entirely; counting sold items without a cost
  * snapshot is what actually shows the hole.
  */
-export function IncompleteCostBanner({ itemsWithoutCost }: { itemsWithoutCost: number }) {
+export function IncompleteCostBanner({
+  itemsWithoutCost,
+  scope = "neste período",
+  showCostsLink = true,
+}: {
+  itemsWithoutCost: number;
+  /** How to describe the window being counted, since this renders on pages with different ones. */
+  scope?: string;
+  /** Off when the banner already sits on the costs page — a link to here from here is noise. */
+  showCostsLink?: boolean;
+}) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const router = useRouter();
@@ -47,15 +57,17 @@ export function IncompleteCostBanner({ itemsWithoutCost }: { itemsWithoutCost: n
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <span>
             <span className="font-medium">O lucro abaixo está maior que o real.</span>{" "}
-            {itemsWithoutCost.toLocaleString("pt-BR")} itens vendidos neste período estão sem custo, então entram como
-            custo zero. Custo cadastrado hoje não vale para venda de meses atrás — se o preço que você paga hoje já valia
+            {itemsWithoutCost.toLocaleString("pt-BR")} itens vendidos {scope} estão sem custo, então entram como custo
+            zero. Custo cadastrado hoje não vale para venda de meses atrás — se o preço que você paga hoje já valia
             antes, aplique ao histórico.
           </span>
         </div>
         <div className="flex shrink-0 items-center gap-3">
-          <Link href="/costs" className="text-sm font-medium text-primary hover:underline">
-            Ver custos
-          </Link>
+          {showCostsLink && (
+            <Link href="/costs" className="text-sm font-medium text-primary hover:underline">
+              Ver custos
+            </Link>
+          )}
           <Button size="sm" onClick={applyToHistory} disabled={loading}>
             {loading ? "Aplicando..." : "Aplicar ao histórico"}
           </Button>

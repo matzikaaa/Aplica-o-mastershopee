@@ -6,6 +6,7 @@ import { Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from "@
 import { AddCostDialog } from "@/components/costs/add-cost-dialog";
 import { ImportCostsDialog } from "@/components/costs/import-costs-dialog";
 import { MergeSkusDialog } from "@/components/products/merge-skus-dialog";
+import { IncompleteCostBanner } from "@/components/dashboard/incomplete-cost-banner";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import Link from "next/link";
 import { Receipt, TriangleAlert } from "lucide-react";
@@ -41,6 +42,15 @@ export default async function CostsPage() {
   });
   const missingCost = products.filter((p) => p.costs.length === 0).length;
 
+  // Sales whose cost is still unknown. Distinct from "product without a cost":
+  // a catalogue can look complete here while every older sale stays uncosted,
+  // because the registered cost only takes effect from its own date (§16).
+  // This is the page the operator checks after seeing the dashboard warning,
+  // so the same warning — and the same one-click fix — belongs here too.
+  const itemsWithoutCost = await prisma.orderItem.count({
+    where: { productId: { not: null }, unitCostSnapshot: null, order: { workspaceId: workspace.id } },
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -55,6 +65,8 @@ export default async function CostsPage() {
           <ImportCostsDialog />
         </div>
       </div>
+
+      {itemsWithoutCost > 0 && <IncompleteCostBanner itemsWithoutCost={itemsWithoutCost} scope="em todo o histórico" showCostsLink={false} />}
 
       {missingCost > 0 && (
         <div className="flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
