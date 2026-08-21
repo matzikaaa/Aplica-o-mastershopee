@@ -20,3 +20,5 @@ export {
   type WhatsappSendResult,
   type WhatsappTemplateMessage,
 } from "./whatsapp";
+
+export { ShopeeProvider, type ShopeeDiagnosis } from "./providers/shopee";

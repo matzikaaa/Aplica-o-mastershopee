@@ -6,6 +6,7 @@ import { getPlanPermissionService } from "@/lib/billing-context";
 import { getIntegrationEnv } from "@/lib/integration-env";
 import { MARKETPLACE_TO_SLUG } from "@/lib/marketplace-slug";
 import { MarketplaceCard } from "@/components/integrations/marketplace-card";
+import { ShopeeDiagnose } from "@/components/integrations/shopee-diagnose";
 
 export default async function IntegrationsPage({ searchParams }: { searchParams: { error?: string; reason?: string; connected?: string } }) {
   const { workspace } = await requireWorkspace();
@@ -42,6 +43,10 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
           Não foi possível concluir a conexão. Tente novamente.
         </div>
       )}
+
+      {/* Only when partner credentials exist: before that the card would be a
+          button that can only ever say "não configurado". */}
+      {isProviderConfigured("SHOPEE", env) && <ShopeeDiagnose />}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {marketplaces.map((m) => (
