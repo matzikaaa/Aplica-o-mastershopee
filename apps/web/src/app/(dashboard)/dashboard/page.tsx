@@ -17,6 +17,7 @@ import { DateRangePicker } from "@/components/dashboard/date-range-picker";
 import { MarketplaceFilter } from "@/components/dashboard/marketplace-filter";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { FinancialComposition } from "@/components/dashboard/financial-composition";
+import { IncompleteCostBanner } from "@/components/dashboard/incomplete-cost-banner";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -59,14 +60,23 @@ export default async function DashboardPage({
     );
   }
 
-  const [current, prev, series, composition, ranking, marketplaceBreakdown, productsWithoutCost] = await Promise.all([
+  const [current, prev, series, composition, ranking, marketplaceBreakdown, itemsWithoutCost] = await Promise.all([
     getKpiSummary(workspace.id, range),
     getKpiSummary(workspace.id, previous),
     getRevenueSeries(workspace.id, range),
     getFinancialComposition(workspace.id, range),
     getProductRanking(workspace.id, range),
     getMarketplaceBreakdown(workspace.id, range),
-    prisma.product.count({ where: { workspaceId: workspace.id, costs: { none: {} } } }),
+    // Items sold in this period with no cost snapshot — not products without a
+    // cost record. A cost registered today leaves every older sale uncosted
+    // while the catalogue looks complete, and only this count sees that.
+    prisma.orderItem.count({
+      where: {
+        productId: { not: null },
+        unitCostSnapshot: null,
+        order: { workspaceId: workspace.id, orderedAt: { gte: range.from, lte: range.to } },
+      },
+    }),
   ]);
 
   const lossProducts = ranking.filter((p) => p.netProfit < 0).sort((a, b) => a.netProfit - b.netProfit);
@@ -94,19 +104,7 @@ export default async function DashboardPage({
         </div>
       </div>
 
-      {productsWithoutCost > 0 && (
-        <div className="flex items-center justify-between rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-warning" />
-            <span>
-              Lucro estimado incompleto. {productsWithoutCost} produto(s) ainda não possuem custo cadastrado.
-            </span>
-          </div>
-          <Link href="/costs" className="font-medium text-primary hover:underline">
-            Cadastrar custos →
-          </Link>
-        </div>
-      )}
+      {itemsWithoutCost > 0 && <IncompleteCostBanner itemsWithoutCost={itemsWithoutCost} />}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <MetricCard
