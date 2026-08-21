@@ -83,6 +83,7 @@ export default async function SettingsPage() {
                   phoneNumber={whatsapp?.phoneNumber}
                   dailyReportTime={whatsapp?.dailyReportTime ?? undefined}
                   dailyReportEnabled={whatsapp?.dailyReportEnabled}
+                  verified={whatsapp?.verified}
                   disabled={!permissions.canUseWhatsApp().allowed}
                 />
               </CardContent>

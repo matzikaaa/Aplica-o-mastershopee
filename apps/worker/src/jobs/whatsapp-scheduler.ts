@@ -1,5 +1,5 @@
 import { prisma } from "@mastershopee/database";
-import { isWhatsappConfigured, sendWhatsappMessage, WHATSAPP_NOT_CONFIGURED } from "../whatsapp.js";
+import { isWhatsappConfigured, sendWhatsappAlert, whatsappTemplates, WHATSAPP_NOT_CONFIGURED } from "../whatsapp.js";
 
 /**
  * §22-24, §64: runs every minute (see scheduler.ts). For each workspace
@@ -64,10 +64,18 @@ export async function runWhatsappScheduler(): Promise<void> {
     }
 
     try {
-      const providerMessageId = await sendWhatsappMessage(config.phoneNumber, message);
+      // Business-initiated, so it goes out as the approved template. The
+      // assembled text travels along as the fallback and as the record of
+      // what was actually said.
+      const { messageId, via } = await sendWhatsappAlert(
+        config.phoneNumber,
+        whatsappTemplates.dailyReport(),
+        dailyReportParams(config.workspace.name, metric),
+        message,
+      );
       await prisma.whatsappReport.update({
         where: { id: report.id },
-        data: { status: "sent", sentAt: new Date(), providerMessageId, payload: { message } },
+        data: { status: "sent", sentAt: new Date(), providerMessageId: messageId, payload: { message, via } },
       });
       await prisma.notification.create({
         data: { workspaceId: config.workspaceId, title: "Relatório diário enviado", body: `Resumo de ontem enviado para ${config.phoneNumber}.` },
@@ -79,6 +87,26 @@ export async function runWhatsappScheduler(): Promise<void> {
       });
     }
   }
+}
+
+/**
+ * Body variables for the `mastershopee_daily_report` template, in the order
+ * it declares them. Kept beside the plain-text builder so the two can never
+ * drift into saying different things about the same day.
+ */
+export function dailyReportParams(
+  workspaceName: string,
+  metric: { grossRevenue: unknown; netProfit: unknown; orderCount: number; adSpend: unknown },
+): string[] {
+  const margin = Number(metric.grossRevenue) === 0 ? 0 : (Number(metric.netProfit) / Number(metric.grossRevenue)) * 100;
+  return [
+    workspaceName,
+    formatBRL(metric.grossRevenue),
+    formatBRL(metric.netProfit),
+    `${margin.toFixed(2)}%`,
+    String(metric.orderCount),
+    formatBRL(metric.adSpend),
+  ];
 }
 
 export function buildDailySummaryMessage(workspaceName: string, metric: { grossRevenue: unknown; netProfit: unknown; orderCount: number; adSpend: unknown }): string {

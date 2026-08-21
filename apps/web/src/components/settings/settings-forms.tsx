@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+import { cn } from "@/lib/utils";
 
 function useSimplePost(url: string, successMessage: string) {
   const [loading, setLoading] = useState(false);
@@ -77,14 +78,39 @@ export function WhatsAppForm({
   phoneNumber,
   dailyReportTime,
   dailyReportEnabled,
+  verified,
   disabled,
 }: {
   phoneNumber?: string;
   dailyReportTime?: string;
   dailyReportEnabled?: boolean;
+  verified?: boolean;
   disabled?: boolean;
 }) {
   const { submit, loading } = useSimplePost("/api/settings/whatsapp", "WhatsApp configurado");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const router = useRouter();
+
+  async function sendTest() {
+    setTesting(true);
+    setTestResult(null);
+    const res = await fetch("/api/settings/whatsapp/test", { method: "POST" });
+    const data = await res.json();
+    setTesting(false);
+    setTestResult(
+      res.ok
+        ? {
+            ok: true,
+            message:
+              data.via === "template"
+                ? "Mensagem enviada pelo template aprovado. Confira o celular — os alertas estão ativos."
+                : "Mensagem enviada como texto livre. Funciona só dentro da janela de 24h; para o resumo diário funcionar, cadastre um template aprovado.",
+          }
+        : { ok: false, message: data.error ?? "Falha no envio." },
+    );
+    router.refresh();
+  }
   return (
     <form
       action={(fd) =>
@@ -113,9 +139,40 @@ export function WhatsAppForm({
         <input type="checkbox" name="dailyReportEnabled" defaultChecked={dailyReportEnabled} disabled={disabled} />
         Enviar resumo diário automaticamente
       </label>
-      <Button type="submit" disabled={loading || disabled}>
-        {loading ? "Salvando..." : "Salvar"}
-      </Button>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" disabled={loading || disabled}>
+          {loading ? "Salvando..." : "Salvar"}
+        </Button>
+        <Button type="button" variant="outline" onClick={sendTest} disabled={testing || disabled || !phoneNumber}>
+          {testing ? "Enviando..." : "Enviar mensagem de teste"}
+        </Button>
+      </div>
+
+      {/* The scheduler only sends to verified configurations, so this state is
+          the difference between "set up" and "actually working" — it is shown
+          rather than assumed. */}
+      <p className="text-xs text-muted-foreground">
+        {verified ? (
+          <span className="text-success">✓ Número verificado — os alertas serão enviados.</span>
+        ) : (
+          <>
+            ⚠ Número ainda não verificado. Nenhum alerta é enviado até um teste chegar de verdade ao seu celular.
+          </>
+        )}
+      </p>
+
+      {testResult && (
+        <p
+          className={cn(
+            "rounded-lg border px-3 py-2 text-xs",
+            testResult.ok
+              ? "border-success/30 bg-success/10"
+              : "border-destructive/30 bg-destructive/10 text-destructive",
+          )}
+        >
+          {testResult.message}
+        </p>
+      )}
     </form>
   );
 }

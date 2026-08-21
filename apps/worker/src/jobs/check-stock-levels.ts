@@ -1,6 +1,6 @@
 import { prisma, unitsSoldPerProduct } from "@mastershopee/database";
 import { averageDailySales, calculateStockCoverage, projectStockoutDate } from "@mastershopee/inventory";
-import { isWhatsappConfigured, sendWhatsappMessage, WHATSAPP_NOT_CONFIGURED } from "../whatsapp.js";
+import { isWhatsappConfigured, sendWhatsappAlert, whatsappTemplates, WHATSAPP_NOT_CONFIGURED } from "../whatsapp.js";
 
 /**
  * Reorder watchdog: warns while there is still time to actually place the
@@ -82,7 +82,22 @@ export async function runStockLevelChecks(): Promise<void> {
           });
         } else {
           try {
-            await sendWhatsappMessage(whatsapp.phoneNumber, message);
+            // Template, not free-form text: nobody asked for this message,
+            // so it is business-initiated and Meta only accepts templates
+            // outside the 24-hour window.
+            await sendWhatsappAlert(
+              whatsapp.phoneNumber,
+              whatsappTemplates.lowStock(),
+              [
+                item.product.name,
+                item.product.sku,
+                String(item.quantity),
+                coverage.daysOfCover === null ? "sem histórico" : `${coverage.daysOfCover.toFixed(1)} dias`,
+                item.supplierName ?? "fornecedor não informado",
+                String(item.leadTimeDays),
+              ],
+              message,
+            );
           } catch (err) {
             await prisma.integrationLog.create({
               data: {

@@ -24,11 +24,23 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Número de telefone inválido." }, { status: 400 });
   }
 
-  await prisma.whatsappConfiguration.upsert({
+  const existing = await prisma.whatsappConfiguration.findUnique({ where: { workspaceId: workspace.id } });
+
+  // Changing the destination number invalidates the verification: what was
+  // proven is that *that* number receives messages, and the proof does not
+  // transfer to a different one.
+  const numberChanged = existing !== null && existing.phoneNumber !== phoneNumber;
+
+  const saved = await prisma.whatsappConfiguration.upsert({
     where: { workspaceId: workspace.id },
-    update: { phoneNumber, dailyReportTime, dailyReportEnabled: Boolean(dailyReportEnabled) },
+    update: {
+      phoneNumber,
+      dailyReportTime,
+      dailyReportEnabled: Boolean(dailyReportEnabled),
+      ...(numberChanged ? { verified: false } : {}),
+    },
     create: { workspaceId: workspace.id, phoneNumber, dailyReportTime, dailyReportEnabled: Boolean(dailyReportEnabled) },
   });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, verified: saved.verified, numberChanged });
 }
