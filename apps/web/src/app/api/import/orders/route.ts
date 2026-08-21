@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma, type MarketplaceType } from "@mastershopee/database";
+import { prisma, resolveProductBySku, type MarketplaceType } from "@mastershopee/database";
 import { normalizeOrderStatus, parseBrDate, parseBrNumber, type ImportSummary } from "@mastershopee/shared";
 import { requireWorkspace } from "@/lib/session";
 import { ensureImportAccount } from "@/lib/import-account";
@@ -80,9 +80,10 @@ export async function POST(request: Request) {
       const isFirstRowOfOrder = !seenOrders.has(orderId);
       seenOrders.add(orderId);
 
-      const product = await prisma.product.findUnique({
-        where: { workspaceId_sku: { workspaceId: workspace.id, sku: skuValue } },
-      });
+      // Through aliases: a SKU merged into another product resolves to the
+      // surviving one, so re-importing an old export does not split the
+      // history again.
+      const product = await resolveProductBySku(workspace.id, skuValue);
 
       const order = await prisma.order.upsert({
         where: {

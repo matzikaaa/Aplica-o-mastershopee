@@ -79,8 +79,10 @@ comprador`.
   filtra, de propósito, para o cancelamento continuar visível.
 - **SKUs quase iguais existem.** Nas amostras aparecem `LAVANDROLL-1` e
   `LAVNDROLL-1` (sem o segundo A) como produtos distintos, cadastrados assim
-  na própria Shopee. O app não junta os dois: adivinhar que é o mesmo produto
-  seria inventar.
+  na própria Shopee. O app não junta os dois sozinho — só quem vende sabe se
+  são o mesmo produto. Em **Custos › Unificar SKUs** o operador escolhe qual
+  fica; o histórico dos dois passa para ele e o código que sumiu vira apelido,
+  para uma reimportação da mesma planilha não recriar a duplicata.
 - **Não há coluna de frete pago pelo vendedor.** Todas as colunas de frete são
   dinheiro do comprador ou subsídio da Shopee. O campo fica sem mapeamento de
   propósito.

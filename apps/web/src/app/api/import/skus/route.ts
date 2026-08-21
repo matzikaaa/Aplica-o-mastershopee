@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@mastershopee/database";
+import { prisma, resolveProductBySku } from "@mastershopee/database";
 import { collectDiscoveredSkus, type ImportSummary } from "@mastershopee/shared";
 import { requireWorkspace } from "@/lib/session";
 
@@ -40,10 +40,9 @@ export async function POST(request: Request) {
 
   for (const { sku, name, row: line } of discovered) {
     try {
-      const existing = await prisma.product.findUnique({
-        where: { workspaceId_sku: { workspaceId: workspace.id, sku } },
-        select: { id: true },
-      });
+      // Resolved through aliases so a SKU already merged into another
+      // product is recognised instead of being recreated.
+      const existing = await resolveProductBySku(workspace.id, sku);
 
       if (existing) {
         summary.updated++;

@@ -101,6 +101,7 @@ model Workspace {
   usageCounters       UsageCounter[]
   stockItems          StockItem[]
   stockMovements      StockMovement[]
+  productSkuAliases   ProductSkuAlias[]
 
   onboardingCompletedAt DateTime?
 }
@@ -344,8 +345,30 @@ model Product {
   orderItems          OrderItem[]
   productMetrics      ProductMetric[]
   stockItem           StockItem?
+  skuAliases          ProductSkuAlias[]
 
   @@unique([workspaceId, sku])
+}
+
+// A SKU that used to be its own product and now points at another one.
+//
+// Sellers mistype SKUs in the marketplace's own catalogue ("LAVNDROLL-1"
+// next to "LAVANDROLL-1"), so the same physical product arrives under two
+// codes. Merging alone would not hold: the next import of the same export
+// would recreate the mistyped product and split the history again. The alias
+// is what makes the merge survive re-importing.
+model ProductSkuAlias {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  sku            String
+  mergedByUserId String?
+  createdAt      DateTime  @default(now())
+
+  @@unique([workspaceId, sku])
+  @@index([productId])
 }
 
 model MarketplaceProduct {

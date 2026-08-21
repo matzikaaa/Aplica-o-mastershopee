@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@mastershopee/database";
+import { prisma, resolveProductBySku } from "@mastershopee/database";
 import { bulkCostRowSchema, type BulkImportResult } from "@mastershopee/shared";
 import { requireWorkspace } from "@/lib/session";
 
@@ -17,9 +17,9 @@ export async function POST(request: Request) {
       continue;
     }
 
-    const product = await prisma.product.findFirst({
-      where: { workspaceId: workspace.id, sku: parsed.data.sku },
-    });
+    // Through aliases, so a cost sheet written with a SKU that has since been
+    // merged still lands on the surviving product.
+    const product = await resolveProductBySku(workspace.id, parsed.data.sku);
     if (!product) {
       result.skipped++;
       result.errors.push({ row: i + 1, sku: parsed.data.sku, message: "SKU não encontrado no workspace." });

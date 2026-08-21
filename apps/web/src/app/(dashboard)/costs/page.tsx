@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from "@/components/ui/table";
 import { AddCostDialog } from "@/components/costs/add-cost-dialog";
 import { ImportCostsDialog } from "@/components/costs/import-costs-dialog";
+import { MergeSkusDialog } from "@/components/products/merge-skus-dialog";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import Link from "next/link";
 import { Receipt, TriangleAlert } from "lucide-react";
@@ -15,9 +16,22 @@ export default async function CostsPage() {
 
   const products = await prisma.product.findMany({
     where: { workspaceId: workspace.id },
-    include: { costs: { orderBy: { effectiveFrom: "desc" }, take: 1 } },
+    include: {
+      costs: { orderBy: { effectiveFrom: "desc" }, take: 1 },
+      stockItem: { select: { quantity: true } },
+      skuAliases: { select: { sku: true } },
+      _count: { select: { orderItems: true, costs: true } },
+    },
     orderBy: { name: "asc" },
   });
+
+  const mergeCandidates = products.map((p) => ({
+    sku: p.sku,
+    name: p.name,
+    orderItems: p._count.orderItems,
+    costs: p._count.costs,
+    units: p.stockItem?.quantity ?? 0,
+  }));
 
   // Products without a cost come first: they are the ones blocking a real
   // profit number, so they are what the operator actually came here to fix.
@@ -36,7 +50,10 @@ export default async function CostsPage() {
             Custo unitário, embalagem e impostos por produto — com histórico preservado.
           </p>
         </div>
-        <ImportCostsDialog />
+        <div className="flex gap-2">
+          <MergeSkusDialog products={mergeCandidates} />
+          <ImportCostsDialog />
+        </div>
       </div>
 
       {missingCost > 0 && (
@@ -85,7 +102,15 @@ export default async function CostsPage() {
                   <TableRow key={p.id}>
                     <TableCell>
                       <p className="font-medium">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">{p.sku}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {p.sku}
+                        {p.skuAliases.length > 0 && (
+                          <span title="SKUs unificados neste produto">
+                            {" "}
+                            · também {p.skuAliases.map((a) => a.sku).join(", ")}
+                          </span>
+                        )}
+                      </p>
                     </TableCell>
                     <TableCell>{current ? formatCurrency(current.unitCost.toString()) : "—"}</TableCell>
                     <TableCell>{current ? formatCurrency(current.packagingCost.toString()) : "—"}</TableCell>

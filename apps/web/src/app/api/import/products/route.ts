@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma, recordStockMovement } from "@mastershopee/database";
+import { prisma, recordStockMovement, resolveProductBySku } from "@mastershopee/database";
 import { parseBrNumber, type ImportSummary } from "@mastershopee/shared";
 import { requireWorkspace } from "@/lib/session";
 
@@ -42,15 +42,13 @@ export async function POST(request: Request) {
     }
 
     try {
-      const existing = await prisma.product.findUnique({
-        where: { workspaceId_sku: { workspaceId: workspace.id, sku } },
-      });
+      // Resolved through aliases: a SKU merged into another product updates
+      // the survivor instead of resurrecting the one that was merged away.
+      const existing = await resolveProductBySku(workspace.id, sku);
 
-      const product = await prisma.product.upsert({
-        where: { workspaceId_sku: { workspaceId: workspace.id, sku } },
-        update: { name },
-        create: { workspaceId: workspace.id, sku, name },
-      });
+      const product = existing
+        ? await prisma.product.update({ where: { id: existing.id }, data: { name } })
+        : await prisma.product.create({ data: { workspaceId: workspace.id, sku, name } });
       existing ? summary.updated++ : summary.created++;
 
       const unitCost = parseBrNumber(row.unitCost);

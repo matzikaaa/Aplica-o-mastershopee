@@ -26,6 +26,13 @@ export {
 } from "./order-status";
 
 export {
+  mergeProducts,
+  resolveProductBySku,
+  type MergeProductsInput,
+  type MergeProductsResult,
+} from "./product-merge";
+
+export {
   ensureStockItem,
   recordStockMovement,
   applySaleToStock,
