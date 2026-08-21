@@ -15,6 +15,7 @@
  */
 import { PrismaClient, MarketplaceType, OrderStatus, MarketplaceAccountStatus } from "@prisma/client";
 import { randomUUID } from "node:crypto";
+import { revenueOrdersWhere } from "../src/order-status";
 import { scryptSync, randomBytes } from "node:crypto";
 
 if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "true") {
@@ -303,7 +304,7 @@ async function main() {
     endOfDay.setHours(23, 59, 59, 999);
 
     const dayOrders = await prisma.order.findMany({
-      where: { workspaceId: workspace.id, orderedAt: { gte: startOfDay, lte: endOfDay } },
+      where: { workspaceId: workspace.id, orderedAt: { gte: startOfDay, lte: endOfDay }, ...revenueOrdersWhere },
       include: { items: true },
     });
 

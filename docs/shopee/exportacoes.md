@@ -11,17 +11,20 @@ fica só o esqueleto das colunas.
 
 ---
 
-## 1. Pedidos — `Order.toship.AAAAMMDD_AAAAMMDD.xlsx`
+## 1. Pedidos
+
+Dois exports diferentes, mesmo layout de coluna:
+
+- **`Order.toship.*.xlsx`** — só os pedidos com status "A Enviar" no momento
+  da exportação. 63 colunas. Não serve para histórico: escolher um mês passado
+  devolve um arquivo só com cabeçalho.
+- **`Order.all.*.xlsx`** — todos os pedidos do período. 64 colunas (acrescenta
+  `Cancelar Motivo` na quarta posição). **É este que serve para histórico.**
 
 Uma aba, chamada `orders`. Cabeçalho na primeira linha. **Uma linha por item
 de pedido** — pedidos com vários itens repetem o número do pedido.
 
-> ⚠️ **Este export traz apenas os pedidos com status "A Enviar" no momento da
-> exportação.** Escolher um período passado não traz o histórico daquele mês:
-> o arquivo sai só com o cabeçalho. Para histórico, exporte pela lista de
-> pedidos com o filtro de status em "Todos"/"Concluído".
-
-### Colunas (63 no total)
+### Colunas
 
 | Coluna | Campo no Mastershopee | Observação |
 | --- | --- | --- |
@@ -49,11 +52,35 @@ Colunas com dados pessoais, ignoradas na importação: `Nome de usuário
 `Endereço de entrega`, `Cidade`, `Bairro`, `UF`, `CEP`, `Observação do
 comprador`.
 
+### Valores de `Status do pedido` vistos em 2.977 linhas reais
+
+| Status na planilha | Vira | Ocorrências |
+| --- | --- | --- |
+| `Concluído` | `DELIVERED` | 1.834 |
+| `Cancelado` | `CANCELED` | 423 |
+| `Entregue` | `DELIVERED` | 275 |
+| `Enviado` | `SHIPPED` | 217 |
+| `O comprador pode pedir uma devolução até <data>` | `DELIVERED` | 194 |
+| `A Enviar` | `PAID` | 27 |
+| `Não pago` | `CREATED` | 6 |
+| `Pedido Recebido` | `PAID` | 1 |
+
+> ⚠️ `O comprador pode pedir uma devolução até <data>` **não é** uma devolução:
+> é um pedido entregue dentro do prazo em que o comprador ainda poderia abrir
+> uma. Classificar como devolvido apagaria 194 vendas reais.
+
 ### Armadilhas confirmadas
 
 - **Nomes de coluna repetidos**: `Desconto do vendedor` aparece duas vezes e
   `Cidade` também. O assistente sufixa a repetição (`Cidade (2)`) para que uma
   não sobrescreva a outra.
+- **`Cancelado` representa 13,4% do faturamento bruto.** Todo lugar que soma
+  dinheiro filtra por `NON_REVENUE_ORDER_STATUSES`; a lista de pedidos não
+  filtra, de propósito, para o cancelamento continuar visível.
+- **SKUs quase iguais existem.** Nas amostras aparecem `LAVANDROLL-1` e
+  `LAVNDROLL-1` (sem o segundo A) como produtos distintos, cadastrados assim
+  na própria Shopee. O app não junta os dois: adivinhar que é o mesmo produto
+  seria inventar.
 - **Não há coluna de frete pago pelo vendedor.** Todas as colunas de frete são
   dinheiro do comprador ou subsídio da Shopee. O campo fica sem mapeamento de
   propósito.
@@ -104,15 +131,20 @@ diária — uma linha por campanha por dia, com uma coluna de data.
 
 ---
 
-## 3. Conferência de importação (agosto/2026)
+## 3. Conferência de importação
 
-17 linhas de pedido reais, importadas pelas rotas `/api/import/skus` e
-`/api/import/orders`:
+Maio a agosto de 2026 (`Order.all`), importado pelas rotas
+`/api/import/skus` e `/api/import/orders`:
 
 | | Planilha | Importado |
 | --- | --- | --- |
-| Linhas | 17 | 17 pedidos, 0 ignorados |
-| SKUs distintos | 5 | 5 produtos criados |
-| Soma de `Subtotal do produto` | 337,27 | 337,27 |
-| Soma de `Taxa de comissão bruta` | 60,73 | 60,73 |
-| Soma de `Taxa de serviço bruta` | 74,75 | 74,75 |
+| Linhas | 2.977 | 2.977 itens, 0 ignorados |
+| Pedidos distintos | 2.964 | 2.964 |
+| Pedidos com mais de um item | 12 | 12 |
+| SKUs distintos | 20 | 20 produtos criados |
+| Soma de `Subtotal do produto` | 66.036,39 | 66.036,39 |
+| Soma de `Taxa de comissão bruta` | 10.265,20 | 10.265,20 |
+| Soma de `Taxa de serviço bruta` | 11.592,10 | 11.592,10 |
+
+Descontando cancelados, devolvidos e reembolsados: **R$ 57.170,55** em
+2.543 pedidos — R$ 8.865,84 a menos que o bruto.

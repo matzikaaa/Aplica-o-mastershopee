@@ -1,4 +1,4 @@
-import { prisma } from "@mastershopee/database";
+import { prisma, revenueOrdersWhere } from "@mastershopee/database";
 import { financialEngine } from "@mastershopee/financial-engine";
 import type { DateRange } from "@mastershopee/shared";
 import type { MarketplaceType } from "@mastershopee/database";
@@ -87,7 +87,7 @@ export async function getFinancialComposition(workspaceId: string, range: DateRa
 export async function getMarketplaceBreakdown(workspaceId: string, range: DateRange) {
   const rows = await prisma.order.groupBy({
     by: ["marketplace"],
-    where: { workspaceId, orderedAt: { gte: range.from, lte: range.to } },
+    where: { workspaceId, orderedAt: { gte: range.from, lte: range.to }, ...revenueOrdersWhere },
     _sum: { grossAmount: true },
     _count: true,
   });
@@ -114,7 +114,7 @@ export interface ProductRankingRow {
 export async function getProductRanking(workspaceId: string, range: DateRange): Promise<ProductRankingRow[]> {
   const items = await prisma.orderItem.findMany({
     where: {
-      order: { workspaceId, orderedAt: { gte: range.from, lte: range.to } },
+      order: { workspaceId, orderedAt: { gte: range.from, lte: range.to }, ...revenueOrdersWhere },
       productId: { not: null },
     },
     include: { product: true, order: true },

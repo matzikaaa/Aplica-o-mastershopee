@@ -1,5 +1,5 @@
 import Decimal from "decimal.js";
-import { prisma, type MarketplaceType } from "@mastershopee/database";
+import { prisma, revenueOrdersWhere, type MarketplaceType } from "@mastershopee/database";
 import { financialEngine } from "@mastershopee/financial-engine";
 import type { ComputeMetricsJobData } from "../queues.js";
 
@@ -15,7 +15,9 @@ export async function computeDailyMetrics(data: ComputeMetricsJobData): Promise<
   const dayEnd = new Date(`${data.date}T23:59:59.999`);
 
   const orders = await prisma.order.findMany({
-    where: { workspaceId: workspace.id, orderedAt: { gte: dayStart, lte: dayEnd } },
+    // Cancelled, refunded and returned orders are excluded: they are real rows
+    // the operator can see in the orders list, but they are not revenue.
+    where: { workspaceId: workspace.id, orderedAt: { gte: dayStart, lte: dayEnd }, ...revenueOrdersWhere },
     include: { items: true, refunds: true },
   });
 

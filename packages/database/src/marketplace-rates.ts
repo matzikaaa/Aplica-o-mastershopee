@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import type { MarketplaceType } from "@prisma/client";
 import { prisma } from "./index";
+import { revenueOrdersWhere } from "./order-status";
 
 /**
  * Effective marketplace rates measured from the workspace's own orders.
@@ -42,7 +43,7 @@ export async function effectiveMarketplaceRates(
       orderedAt: { gte: since },
       // Cancelled orders often carry reversed or zeroed fees; including them
       // would drag the averages away from what a real sale costs.
-      status: { notIn: ["CANCELED", "REFUNDED", "RETURNED"] },
+      ...revenueOrdersWhere,
     },
     _sum: {
       grossAmount: true,

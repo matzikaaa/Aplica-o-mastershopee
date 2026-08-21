@@ -252,7 +252,14 @@ export function normalizeOrderStatus(raw: unknown): string {
   const s = normalizeHeader(String(raw ?? ""));
   if (!s) return "PAID";
   if (/cancel/.test(s)) return "CANCELED";
-  if (/devolv|retorn|return/.test(s)) return "RETURNED";
+  // Shopee stamps delivered orders with "O comprador pode pedir uma devolução
+  // até <data>" — the buyer *may* still open one, none was opened. Reading
+  // that as a return would erase a real sale, so it is matched before the
+  // return rule and settled as delivered.
+  if (/pode (pedir|solicitar).*(devolu|reembols)|prazo (de|para) devolu/.test(s)) return "DELIVERED";
+  // "devolu" as well as "devolv": accent stripping turns "devolução" into
+  // "devolucao", which the old pattern never matched.
+  if (/devolv|devolu|retorn|return/.test(s)) return "RETURNED";
   if (/reembols|estorn|refund/.test(s)) return "REFUNDED";
   if (/entreg|conclu|complet|deliver/.test(s)) return "DELIVERED";
   // "A enviar" / "Envio pendente" is Shopee's *awaiting* shipment state — the

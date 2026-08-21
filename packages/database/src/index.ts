@@ -20,6 +20,12 @@ if (process.env.NODE_ENV !== "production") {
 export * from "@prisma/client";
 
 export {
+  NON_REVENUE_ORDER_STATUSES,
+  revenueOrdersWhere,
+  countsAsRevenue,
+} from "./order-status";
+
+export {
   ensureStockItem,
   recordStockMovement,
   applySaleToStock,

@@ -288,6 +288,19 @@ describe("normalizeOrderStatus — status reais da Shopee", () => {
     expect(normalizeOrderStatus("Não pago")).toBe("CREATED");
   });
 
+  it("não confunde o prazo de devolução com uma devolução de verdade", () => {
+    // Shopee carimba pedidos entregues com esse texto. Ler como devolvido
+    // apagaria a venda: são 194 das 2977 linhas de um mês real.
+    expect(normalizeOrderStatus("O comprador pode pedir uma devolução até 2026-08-22")).toBe("DELIVERED");
+    expect(normalizeOrderStatus("O comprador pode solicitar reembolso até 25/08/2026")).toBe("DELIVERED");
+  });
+
+  it("reconhece devolução de verdade, com e sem acento", () => {
+    expect(normalizeOrderStatus("Devolvido")).toBe("RETURNED");
+    expect(normalizeOrderStatus("Devolução")).toBe("RETURNED");
+    expect(normalizeOrderStatus("Em devolução")).toBe("RETURNED");
+  });
+
   it("continua reconhecendo enviado, concluído e cancelado", () => {
     expect(normalizeOrderStatus("Enviado")).toBe("SHIPPED");
     expect(normalizeOrderStatus("Concluído")).toBe("DELIVERED");

@@ -1,5 +1,6 @@
 import { Prisma, type StockMovementType } from "@prisma/client";
 import { prisma } from "./index";
+import { revenueOrdersWhere } from "./order-status";
 
 /**
  * Stock ledger operations. Every balance change goes through here so the
@@ -172,7 +173,7 @@ export async function unitsSoldPerProduct(
         workspaceId,
         orderedAt: { gte: since },
         // Cancelled and refunded orders never consumed stock.
-        status: { notIn: ["CANCELED", "REFUNDED", "RETURNED"] },
+        ...revenueOrdersWhere,
       },
     },
     _sum: { quantity: true },
