@@ -72,9 +72,15 @@ Rode duas vezes: o primeiro valor vai em `AUTH_SECRET`, o segundo em
 | `AUTH_SECRET` | primeiro segredo gerado (passo 3) |
 | `CREDENTIALS_ENCRYPTION_KEY` | segundo segredo gerado (passo 3) |
 | `NODE_ENV` | `production` |
-| `SHOPEE_PARTNER_ID` | seu **Live** Partner ID |
-| `SHOPEE_PARTNER_KEY` | sua **Live** Partner Key |
-| `SHOPEE_ENV` | `live` |
+| `SHOPEE_PARTNER_ID` | seu Partner ID (ver nota abaixo) |
+| `SHOPEE_PARTNER_KEY` | sua Partner Key |
+| `SHOPEE_ENV` | `test` por enquanto |
+
+> **A Shopee é um ovo-e-galinha: o Go-Live exige uma URL no ar, e a URL Live
+> só existe depois do Go-Live aprovado.** Suba com as credenciais de Test (ou
+> deixe os três campos em branco — o app sobe igual e mostra "não
+> configurado"), pegue a URL, submeta o formulário, e troque para as
+> credenciais Live com `SHOPEE_ENV=live` só depois da aprovação.
 
 6. Clique em **Deploy**. Ao terminar, anote a URL gerada (ex.: `https://mastershopee.vercel.app`).
 
@@ -105,7 +111,22 @@ O `seed.ts` cria **apenas o catálogo de planos** — nenhum dado fictício.
 > Se quiser popular o ambiente com dados de demonstração para os revisores da
 > Shopee verem o produto funcionando, veja "Conta de demonstração" abaixo.
 
-## 6. Shopee
+## 6. Verificação rápida
+
+Antes de entregar a URL para a Shopee, confira em janela anônima:
+
+| O que | Deve |
+|---|---|
+| `https://SEU-APP.vercel.app/` | abrir a landing page |
+| `/privacidade` e `/termos` | abrir sem login — o revisor lê os dois |
+| `/login` | aceitar o login demo |
+| `/api/integrations/shopee/callback` | responder algo (não precisa funcionar sozinho) |
+
+Se `/login` recusar credenciais corretas, quase sempre é `NEXTAUTH_URL`
+diferente do domínio que o navegador está usando — o erro aparece como "e-mail
+ou senha incorretos", que engana.
+
+## 7. Shopee
 
 No console da Shopee, no seu app, configure **Live Redirect URL Domain** como:
 
@@ -130,8 +151,18 @@ $env:ALLOW_DEMO_SEED="true"
 pnpm --filter @mastershopee/database exec tsx prisma/seed-demo.ts
 ```
 
-Credenciais resultantes: `demo@mastershopee.app` / `demo12345` — é isso que
-vai nos campos "Test Username/Password of Business Product".
+Isso cria `demo@mastershopee.app` com a senha `demo12345`. **Troque a senha
+antes de entregar o login**, porque `demo12345` está publicada no README deste
+repositório, que é público — sem trocar, qualquer pessoa que leia o repo entra
+na conta que você deu à Shopee:
+
+```powershell
+$env:DATABASE_URL="postgresql://...neon.tech/neondb?sslmode=require"
+pnpm db:set-password demo@mastershopee.app 'uma-senha-forte-e-unica'
+```
+
+É `demo@mastershopee.app` + essa senha nova que vão nos campos "Test
+Username/Password of Business Product".
 
 Todo o dado criado é prefixado com `[DEMO]` e some com
 `prisma/purge-demo.ts` quando não for mais necessário. O `ALLOW_DEMO_SEED`
