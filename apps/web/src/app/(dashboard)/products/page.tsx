@@ -21,11 +21,16 @@ export default async function ProductsPage({ searchParams }: { searchParams: { p
   const period = (searchParams.period ?? "last_30_days") as DateRangePreset;
   const range = resolveDateRange(period, workspace.timezone);
 
-  let ranking = await getProductRanking(workspace.id, range);
-  if (searchParams.status) {
-    ranking = ranking.filter((p) => classifyProductHealth(p.marginPercent) === searchParams.status);
-  }
-  ranking.sort((a, b) => b.revenue - a.revenue);
+  const fullRanking = await getProductRanking(workspace.id, range);
+  const activeStatus = searchParams.status;
+  let ranking = activeStatus
+    ? fullRanking.filter((p) => classifyProductHealth(p.marginPercent) === activeStatus)
+    : fullRanking;
+  ranking = [...ranking].sort((a, b) => b.revenue - a.revenue);
+
+  // Products whose sales carry no cost at all: their profit is computed with
+  // cost zero, so it is an upper bound rather than a result.
+  const incompleteRows = ranking.filter((p) => p.unitsWithoutCost > 0).length;
 
   return (
     <div className="space-y-6">
@@ -36,6 +41,21 @@ export default async function ProductsPage({ searchParams }: { searchParams: { p
         </div>
         <DateRangePicker current={period} />
       </div>
+
+      {activeStatus && (
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-4 py-2.5 text-sm">
+          <span className="text-muted-foreground">Mostrando apenas:</span>
+          <span className="font-medium">
+            {STATUS_CONFIG[activeStatus as keyof typeof STATUS_CONFIG]?.label ?? activeStatus}
+          </span>
+          <span className="text-muted-foreground">
+            · {ranking.length} de {fullRanking.length} produtos
+          </span>
+          <Link href={`/products?period=${period}`} className="ml-auto font-medium text-primary hover:underline">
+            Ver todos
+          </Link>
+        </div>
+      )}
 
       {ranking.length === 0 ? (
         <EmptyState
@@ -72,9 +92,15 @@ export default async function ProductsPage({ searchParams }: { searchParams: { p
                     </TableCell>
                     <TableCell>{formatPercent(p.marginPercent)}</TableCell>
                     <TableCell>
-                      <Badge variant={status.variant}>
-                        {status.dot} {status.label}
-                      </Badge>
+                      {p.unitsWithoutCost > 0 ? (
+                        <Badge variant="outline" title={`${p.unitsWithoutCost} unidade(s) vendida(s) sem custo cadastrado`}>
+                          ⚪ Sem custo
+                        </Badge>
+                      ) : (
+                        <Badge variant={status.variant}>
+                          {status.dot} {status.label}
+                        </Badge>
+                      )}
                     </TableCell>
                   </TableRow>
                 );
@@ -84,12 +110,15 @@ export default async function ProductsPage({ searchParams }: { searchParams: { p
         </Card>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        Produtos sem custo cadastrado usam custo zero na estimativa de lucro.{" "}
-        <Link href="/costs" className="text-primary hover:underline">
-          Cadastrar custos →
-        </Link>
-      </p>
+      {incompleteRows > 0 && (
+        <p className="text-xs text-muted-foreground">
+          {incompleteRows} produto(s) marcado(s) como <strong>Sem custo</strong> tiveram vendas sem custo conhecido, então
+          o lucro deles é calculado com custo zero — é um teto, não um resultado.{" "}
+          <Link href="/costs" className="text-primary hover:underline">
+            Cadastrar custos →
+          </Link>
+        </p>
+      )}
     </div>
   );
 }

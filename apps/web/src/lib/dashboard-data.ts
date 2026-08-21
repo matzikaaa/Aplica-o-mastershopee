@@ -108,6 +108,13 @@ export interface ProductRankingRow {
   revenue: number;
   netProfit: number;
   marginPercent: number;
+  /**
+   * Units sold in the period whose cost was unknown, so they were computed
+   * with cost zero. Anything above zero means this row's profit is an upper
+   * bound, not a result — and a "prejuízo" badge on such a row would be
+   * reporting an arithmetic artifact as a business fact.
+   */
+  unitsWithoutCost: number;
 }
 
 /** Computes per-product profit for a date range via the financial engine over raw order items (§14, §15, §47). */
@@ -120,7 +127,10 @@ export async function getProductRanking(workspaceId: string, range: DateRange): 
     include: { product: true, order: true },
   });
 
-  const byProduct = new Map<string, { sku: string; name: string; units: number; revenue: Decimal; profit: Decimal }>();
+  const byProduct = new Map<
+    string,
+    { sku: string; name: string; units: number; unitsWithoutCost: number; revenue: Decimal; profit: Decimal }
+  >();
 
   for (const item of items) {
     if (!item.product) continue;
@@ -137,10 +147,12 @@ export async function getProductRanking(workspaceId: string, range: DateRange): 
       sku: item.product.sku,
       name: item.product.name,
       units: 0,
+      unitsWithoutCost: 0,
       revenue: new Decimal(0),
       profit: new Decimal(0),
     };
     existing.units += item.quantity;
+    if (item.unitCostSnapshot === null) existing.unitsWithoutCost += item.quantity;
     existing.revenue = existing.revenue.plus(result.grossRevenue.toDecimal());
     existing.profit = existing.profit.plus(result.netProfit.toDecimal());
     byProduct.set(item.productId!, existing);
@@ -151,6 +163,7 @@ export async function getProductRanking(workspaceId: string, range: DateRange): 
     sku: v.sku,
     name: v.name,
     unitsSold: v.units,
+    unitsWithoutCost: v.unitsWithoutCost,
     revenue: v.revenue.toNumber(),
     netProfit: v.profit.toNumber(),
     marginPercent: v.revenue.isZero() ? 0 : v.profit.dividedBy(v.revenue).times(100).toNumber(),
