@@ -33,6 +33,13 @@ export {
 } from "./product-merge";
 
 export {
+  computeDailyMetrics,
+  recomputeMetricsForDays,
+  backfillMissingCostSnapshots,
+  type ComputeMetricsInput,
+} from "./metrics";
+
+export {
   ensureStockItem,
   recordStockMovement,
   applySaleToStock,

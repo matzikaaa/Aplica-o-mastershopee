@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@mastershopee/database";
+import { backfillMissingCostSnapshots, prisma, recomputeMetricsForDays } from "@mastershopee/database";
 import { productCostSchema } from "@mastershopee/shared";
 import { requireWorkspace } from "@/lib/session";
 
@@ -21,6 +21,12 @@ export async function POST(request: Request) {
     data: { ...parsed.data, createdByUserId: user.id },
   });
 
+  // Orders already imported without a known cost get theirs now, and the days
+  // they fall on are re-aggregated — otherwise registering a cost would leave
+  // the dashboard showing the same incomplete profit it showed before.
+  const staleDays = await backfillMissingCostSnapshots(product.id);
+  await recomputeMetricsForDays(workspace.id, staleDays);
+
   await prisma.auditLog.create({
     data: {
       workspaceId: workspace.id,
@@ -28,9 +34,13 @@ export async function POST(request: Request) {
       action: "product.cost.updated",
       entityType: "Product",
       entityId: product.id,
-      metadata: { unitCost: parsed.data.unitCost, effectiveFrom: parsed.data.effectiveFrom.toISOString() },
+      metadata: {
+        unitCost: parsed.data.unitCost,
+        effectiveFrom: parsed.data.effectiveFrom.toISOString(),
+        backfilledDays: staleDays.length,
+      },
     },
   });
 
-  return NextResponse.json(cost);
+  return NextResponse.json({ ...cost, backfilledDays: staleDays.length });
 }

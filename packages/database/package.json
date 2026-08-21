@@ -20,7 +20,8 @@
   },
   "dependencies": {
     "@prisma/client": "^5.18.0",
-    "decimal.js": "^10.4.3"
+    "decimal.js": "^10.4.3",
+    "@mastershopee/financial-engine": "workspace:*"
   },
   "devDependencies": {
     "prisma": "^5.18.0",

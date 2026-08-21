@@ -35,6 +35,7 @@ export function ImportWizard({
   title,
   description,
   nextStep,
+  option,
 }: {
   fields: ImportField[];
   endpoint: string;
@@ -43,11 +44,14 @@ export function ImportWizard({
   description: string;
   /** Where the operator should go once this import lands. */
   nextStep?: { href: string; label: string };
+  /** A single declaration the operator makes about the file, sent with it. */
+  option?: { key: string; label: string; hint: string };
 }) {
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Record<string, string>[]>([]);
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [marketplace, setMarketplace] = useState<MarketplaceType>("SHOPEE");
+  const [optionOn, setOptionOn] = useState(false);
   const [fileName, setFileName] = useState("");
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<ImportSummary | null>(null);
@@ -163,7 +167,11 @@ export function ImportWizard({
     const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rows: payload, ...(needsMarketplace ? { marketplace } : {}) }),
+      body: JSON.stringify({
+        rows: payload,
+        ...(needsMarketplace ? { marketplace } : {}),
+        ...(option ? { [option.key]: optionOn } : {}),
+      }),
     });
     setLoading(false);
 
@@ -320,6 +328,21 @@ export function ImportWizard({
               <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
               <p>Relacione as colunas obrigatórias: {missingRequired.join(", ")}.</p>
             </div>
+          )}
+
+          {option && (
+            <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card px-4 py-3">
+              <input
+                type="checkbox"
+                checked={optionOn}
+                onChange={(e) => setOptionOn(e.target.checked)}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span className="text-sm">
+                <span className="font-medium">{option.label}</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">{option.hint}</span>
+              </span>
+            </label>
           )}
 
           {parseError && (

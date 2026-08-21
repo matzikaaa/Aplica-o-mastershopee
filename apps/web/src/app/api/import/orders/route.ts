@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { prisma, resolveProductBySku, type MarketplaceType } from "@mastershopee/database";
+import {
+  prisma,
+  recomputeMetricsForDays,
+  resolveProductBySku,
+  type MarketplaceType,
+} from "@mastershopee/database";
 import { normalizeOrderStatus, parseBrDate, parseBrNumber, type ImportSummary } from "@mastershopee/shared";
 import { requireWorkspace } from "@/lib/session";
 import { ensureImportAccount } from "@/lib/import-account";
@@ -40,6 +45,7 @@ export async function POST(request: Request) {
   const account = await ensureImportAccount(workspace.id, marketplace);
   const summary: ImportSummary = { created: 0, updated: 0, skipped: 0, errors: [] };
   const seenOrders = new Set<string>();
+  const touchedDays = new Set<string>();
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;
@@ -159,6 +165,8 @@ export async function POST(request: Request) {
         },
       });
 
+      touchedDays.add(orderDate.toISOString().slice(0, 10));
+
       if (isFirstRowOfOrder) summary.created++;
       else summary.updated++;
 
@@ -178,14 +186,21 @@ export async function POST(request: Request) {
     }
   }
 
+  // Aggregate straight away instead of waiting for the worker: an import is
+  // the one path with no queue behind it, and without this the dashboard
+  // stays blank for every month the operator just loaded.
+  const daysComputed = await recomputeMetricsForDays(workspace.id, touchedDays);
+
   await prisma.auditLog.create({
     data: {
       workspaceId: workspace.id,
       userId: user.id,
       action: "import.orders",
-      metadata: { marketplace, orders: seenOrders.size, errors: summary.errors.length },
+      metadata: { marketplace, orders: seenOrders.size, days: daysComputed, errors: summary.errors.length },
     },
   });
+
+  summary.note = `${seenOrders.size} pedidos gravados e ${daysComputed} dias recalculados. Os resultados já aparecem no painel.`;
 
   return NextResponse.json(summary);
 }

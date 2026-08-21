@@ -60,6 +60,11 @@ export function ImportTabs() {
           title="Produtos, custos e estoque"
           description="Cada linha é um produto. O estoque informado passa a ser o saldo atual — reimportar com valores corrigidos ajusta, não soma."
           nextStep={{ href: "/costs", label: "Ver custos" }}
+          option={{
+            key: "applyToHistory",
+            label: "Estes custos já valiam para os pedidos antigos",
+            hint: "Marque se o preço que você paga hoje é o mesmo que pagava no período já importado. Sem isso o custo vale só de hoje em diante, e o lucro do histórico continua marcado como incompleto — o app não decide isso por você.",
+          }}
         />
       )}
 

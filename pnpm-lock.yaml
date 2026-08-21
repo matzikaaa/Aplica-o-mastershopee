@@ -188,6 +188,9 @@ importers:
 
   packages/database:
     dependencies:
+      '@mastershopee/financial-engine':
+        specifier: workspace:*
+        version: link:../financial-engine
       '@prisma/client':
         specifier: ^5.18.0
         version: 5.22.0(prisma@5.22.0)
