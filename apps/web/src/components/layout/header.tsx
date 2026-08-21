@@ -15,15 +15,17 @@ export function Header({
   workspaceName: string;
   userName: string;
   userEmail: string;
-  syncStatus?: "synced" | "syncing" | "error" | "none";
+  syncStatus?: "synced" | "syncing" | "error" | "manual" | "none";
 }) {
   const [profileOpen, setProfileOpen] = useState(false);
 
-  // "none" is its own state on purpose: with no account connected there is
-  // nothing to have synced, and showing "Sincronizado" there would assert a
-  // status that doesn't exist (§61, §96).
+  // "none" and "manual" are their own states on purpose: with nothing
+  // connected there is nothing to have synced, and showing "Sincronizado"
+  // over hand-loaded spreadsheet data would assert a status that doesn't
+  // exist (§61, §96).
   const statusConfig = {
     none: { label: "Nenhum marketplace conectado", dot: "bg-muted-foreground/50" },
+    manual: { label: "Dados importados por planilha", dot: "bg-muted-foreground/50" },
     synced: { label: "Sincronizado", dot: "bg-success" },
     syncing: { label: "Sincronizando...", dot: "bg-warning animate-pulse" },
     error: { label: "Erro de sincronização", dot: "bg-destructive" },

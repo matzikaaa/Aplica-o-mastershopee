@@ -46,8 +46,13 @@ export default async function OnboardingPage() {
   }
 
   const workspace = membership.workspace;
-  const [marketplaceCount, costCount, whatsapp] = await Promise.all([
-    prisma.marketplaceAccount.count({ where: { workspaceId: workspace.id } }),
+  // "Vendas carregadas" is satisfied by either route — an OAuth connection or
+  // a spreadsheet import. Insisting on a connected marketplace would leave the
+  // checklist permanently unfinished for an operator whose history is already
+  // in the app, loaded by hand.
+  const [connectedCount, orderCount, costCount, whatsapp] = await Promise.all([
+    prisma.marketplaceAccount.count({ where: { workspaceId: workspace.id, status: "CONNECTED" } }),
+    prisma.order.count({ where: { workspaceId: workspace.id } }),
     prisma.productCost.count({ where: { product: { workspaceId: workspace.id } } }),
     prisma.whatsappConfiguration.findUnique({ where: { workspaceId: workspace.id } }),
   ]);
@@ -55,7 +60,12 @@ export default async function OnboardingPage() {
   const steps: ChecklistStep[] = [
     { key: "account", label: "Conta criada", href: "/onboarding", done: true },
     { key: "subscription", label: "Assinatura ativada (teste grátis)", href: "/subscription", done: true },
-    { key: "marketplace", label: "Marketplace conectado", href: "/integrations", done: marketplaceCount > 0 },
+    {
+      key: "sales",
+      label: connectedCount > 0 ? "Marketplace conectado" : "Vendas carregadas (conexão ou planilha)",
+      href: orderCount > 0 || connectedCount > 0 ? "/dashboard" : "/import",
+      done: connectedCount > 0 || orderCount > 0,
+    },
     { key: "costs", label: "Custos cadastrados", href: "/costs", done: costCount > 0 },
     { key: "whatsapp", label: "WhatsApp configurado", href: "/settings", done: Boolean(whatsapp?.verified) },
   ];

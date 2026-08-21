@@ -23,13 +23,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
     where: { workspaceId: workspace.id, status: { not: "DISCONNECTED" } },
     select: { status: true },
   });
-  const syncStatus = accounts.length === 0
-    ? "none"
-    : accounts.some((a) => a.status === "ERROR" || a.status === "TOKEN_EXPIRED")
-      ? "error"
-      : accounts.some((a) => a.status === "SYNCING")
-        ? "syncing"
-        : "synced";
+
+  // NOT_CONNECTED accounts are the placeholders spreadsheet imports hang off.
+  // They must never count towards "Sincronizado": nothing synced, the operator
+  // loaded the data by hand, and saying otherwise would invent a status.
+  const live = accounts.filter((a) => a.status !== "NOT_CONNECTED");
+  const syncStatus =
+    live.length === 0
+      ? accounts.length > 0
+        ? "manual"
+        : "none"
+      : live.some((a) => a.status === "ERROR" || a.status === "TOKEN_EXPIRED")
+        ? "error"
+        : live.some((a) => a.status === "SYNCING")
+          ? "syncing"
+          : "synced";
 
   return (
     <div className="flex h-screen overflow-hidden">

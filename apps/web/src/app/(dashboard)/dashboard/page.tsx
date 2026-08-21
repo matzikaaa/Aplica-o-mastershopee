@@ -34,17 +34,26 @@ export default async function DashboardPage({
   const range = resolveDateRange(period, workspace.timezone);
   const previous = previousPeriod(range);
 
-  const hasAnyConnection = (await prisma.marketplaceAccount.count({ where: { workspaceId: workspace.id } })) > 0;
+  // Gated on whether there are sales at all, not on whether an API connection
+  // exists: a workspace loaded from spreadsheet exports has real orders, real
+  // fees and real profit, and telling that operator there is nothing to show
+  // would be false.
+  const hasAnyOrder = (await prisma.order.count({ where: { workspaceId: workspace.id } })) > 0;
 
-  if (!hasAnyConnection) {
+  if (!hasAnyOrder) {
     return (
       <EmptyState
-        title="Nenhum marketplace conectado"
-        description="Conecte sua primeira loja e veja automaticamente vendas, taxas e lucro."
+        title="Nenhuma venda por aqui ainda"
+        description="Traga seu histórico de uma das duas formas: conecte a loja para sincronizar sozinho, ou suba a planilha que o marketplace já exporta."
         action={
-          <Link href="/integrations" className="text-sm font-medium text-primary hover:underline">
-            Conectar marketplace →
-          </Link>
+          <span className="flex flex-wrap items-center justify-center gap-4">
+            <Link href="/import" className="text-sm font-medium text-primary hover:underline">
+              Importar planilha →
+            </Link>
+            <Link href="/integrations" className="text-sm font-medium text-primary hover:underline">
+              Conectar marketplace →
+            </Link>
+          </span>
         }
       />
     );
