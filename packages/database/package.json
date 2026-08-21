@@ -16,7 +16,8 @@
     "studio": "prisma studio",
     "typecheck": "tsc --noEmit",
     "lint": "echo skip",
-    "test": "echo skip"
+    "test": "echo skip",
+    "verify:user": "tsx prisma/verify-user.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.18.0",

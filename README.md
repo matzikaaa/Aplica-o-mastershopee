@@ -68,6 +68,14 @@ pnpm dev:worker                # apps/worker (separate terminal)
 
 Register at `/register` and the dashboard stays genuinely empty until a real marketplace account is connected — no invented orders, revenue or metrics anywhere (§75, §94).
 
+With no SMTP configured, the verification e-mail is printed to the dev server's
+console (look for `[email:dev-fallback]`) instead of being silently swallowed.
+To skip the round trip locally:
+
+```bash
+pnpm db:verify-user voce@exemplo.com   # refuses to run with NODE_ENV=production
+```
+
 ### Demo data (opt-in)
 
 ```bash

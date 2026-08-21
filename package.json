@@ -18,6 +18,7 @@
     "db:migrate": "pnpm --filter @mastershopee/database migrate",
     "db:seed": "pnpm --filter @mastershopee/database seed",
     "db:seed:demo": "pnpm --filter @mastershopee/database seed:demo",
+    "db:verify-user": "pnpm --filter @mastershopee/database verify:user",
     "db:purge:demo": "pnpm --filter @mastershopee/database purge:demo",
     "db:studio": "pnpm --filter @mastershopee/database studio",
     "worker": "pnpm --filter @mastershopee/worker start"
