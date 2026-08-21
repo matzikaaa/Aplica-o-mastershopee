@@ -640,6 +640,10 @@ model AdSpend {
   campaign     AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   date         DateTime   @db.Date
   spend        Decimal    @db.Decimal(14, 4)
+  // True when this day's figure came from splitting a period total evenly:
+  // the period sum is real, the per-day slice is a rateio. Shown as such in
+  // the UI so a daily chart never passes off an estimate as measured.
+  isEstimated  Boolean    @default(false)
   attributedRevenue Decimal @db.Decimal(14, 4) @default(0)
   orders       Int        @default(0)
   clicks       Int?

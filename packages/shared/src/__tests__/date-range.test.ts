@@ -34,3 +34,22 @@ describe("previousPeriod (§48 — hoje x ontem comparisons)", () => {
     expect(prev.to.getTime()).toBeLessThan(range.from.getTime());
   });
 });
+
+describe("all_time — resultado total", () => {
+  it("cobre desde antes de qualquer marketplace existir ate o fim de hoje", () => {
+    const range = resolveDateRange("all_time", "America/Sao_Paulo", new Date("2026-08-21T15:00:00Z"));
+    expect(range.from.getFullYear()).toBeLessThanOrEqual(2000);
+    expect(range.to.getHours()).toBe(23);
+    expect(range.to.getMinutes()).toBe(59);
+  });
+
+  it("nao tem periodo anterior — comparar contra o vazio seria numero inventado", () => {
+    const range = resolveDateRange("all_time", "America/Sao_Paulo");
+    expect(previousPeriod(range)).toBeNull();
+  });
+
+  it("os demais periodos continuam tendo um anterior", () => {
+    const range = resolveDateRange("last_30_days", "America/Sao_Paulo");
+    expect(previousPeriod(range)).not.toBeNull();
+  });
+});

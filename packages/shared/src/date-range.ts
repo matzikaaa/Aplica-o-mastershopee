@@ -30,15 +30,26 @@ export function resolveDateRange(preset: DateRangePreset, timezone: string, now 
       const to = new Date(startOfToday.getFullYear(), startOfToday.getMonth(), 0);
       return { from, to: endOf(to) };
     }
+    case "all_time":
+      // Deliberately a fixed floor rather than "the oldest order in the
+      // database": this function is pure and has no data access, and a
+      // marketplace seller's history cannot predate the marketplaces.
+      return { from: new Date(2000, 0, 1), to: endOf(startOfToday) };
     case "custom":
     default:
       return { from: startOfToday, to: endOf(startOfToday) };
   }
 }
 
-/** Returns the immediately preceding period of equal length, for comparison deltas (§48). */
-export function previousPeriod(range: DateRange): DateRange {
+/**
+ * Returns the immediately preceding period of equal length, for comparison
+ * deltas (§48). Returns null for a range that reaches back to the beginning:
+ * there is nothing before "everything", and comparing against an empty window
+ * would render a meaningless +100%.
+ */
+export function previousPeriod(range: DateRange): DateRange | null {
   const lengthMs = range.to.getTime() - range.from.getTime();
+  if (range.from.getFullYear() <= 2000) return null;
   return {
     from: new Date(range.from.getTime() - lengthMs - 1),
     to: new Date(range.from.getTime() - 1),

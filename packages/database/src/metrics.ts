@@ -49,6 +49,19 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
 
   const total = financialEngine.aggregate(results, workspace.currency);
 
+  // Campaign-level ad spend for the day. When it exists it *is* the day's ad
+  // spend: per-order `adSpendAttributed` is an allocation of the same money
+  // across orders, so adding the two would count the spend twice. The
+  // allocation stays useful per product; the day's total comes from here.
+  const campaignSpend = await prisma.adSpend.aggregate({
+    where: { date: dayStart, campaign: { workspaceId: workspace.id } },
+    _sum: { spend: true },
+  });
+  const campaignAdSpend = new Decimal(String(campaignSpend._sum.spend ?? 0));
+  const dayAdSpend = campaignAdSpend.gt(0) ? campaignAdSpend : total.adSpend.toDecimal();
+  // The engine already subtracted the per-order figure; correct by the delta.
+  const dayNetProfit = total.netProfit.toDecimal().plus(total.adSpend.toDecimal()).minus(dayAdSpend);
+
   // Products with zero cost history make the day's numbers an estimate, not final (§96, §61).
   const productsMissingCost = await prisma.product.count({ where: { workspaceId: workspace.id, costs: { none: {} } } });
 
@@ -61,12 +74,12 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
       commission: total.commission.toFixed(),
       marketplaceFees: total.marketplaceFees.toFixed(),
       shipping: total.shipping.toFixed(),
-      adSpend: total.adSpend.toFixed(),
+      adSpend: dayAdSpend.toFixed(4),
       taxes: total.taxes.toFixed(),
       refunds: total.refunds.toFixed(),
       otherCosts: total.otherCosts.toFixed(),
       grossProfit: total.grossProfit.toFixed(),
-      netProfit: total.netProfit.toFixed(),
+      netProfit: dayNetProfit.toFixed(4),
       orderCount: orders.length,
       dataQuality: productsMissingCost > 0 ? "partial" : "complete",
       computedAt: new Date(),
@@ -80,12 +93,12 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
       commission: total.commission.toFixed(),
       marketplaceFees: total.marketplaceFees.toFixed(),
       shipping: total.shipping.toFixed(),
-      adSpend: total.adSpend.toFixed(),
+      adSpend: dayAdSpend.toFixed(4),
       taxes: total.taxes.toFixed(),
       refunds: total.refunds.toFixed(),
       otherCosts: total.otherCosts.toFixed(),
       grossProfit: total.grossProfit.toFixed(),
-      netProfit: total.netProfit.toFixed(),
+      netProfit: dayNetProfit.toFixed(4),
       orderCount: orders.length,
       dataQuality: productsMissingCost > 0 ? "partial" : "complete",
     },

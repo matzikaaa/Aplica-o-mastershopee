@@ -33,6 +33,8 @@ export default async function DashboardPage({
   const marketplace = (searchParams.marketplace ?? "all") as MarketplaceType | "all";
 
   const range = resolveDateRange(period, workspace.timezone);
+  // Null on "Desde o início": there is no period before everything, so the
+  // comparison deltas are simply not shown rather than invented.
   const previous = previousPeriod(range);
 
   // Gated on whether there are sales at all, not on whether an API connection
@@ -62,7 +64,7 @@ export default async function DashboardPage({
 
   const [current, prev, series, composition, ranking, marketplaceBreakdown, itemsWithoutCost] = await Promise.all([
     getKpiSummary(workspace.id, range),
-    getKpiSummary(workspace.id, previous),
+    previous ? getKpiSummary(workspace.id, previous) : null,
     getRevenueSeries(workspace.id, range),
     getFinancialComposition(workspace.id, range),
     getProductRanking(workspace.id, range),
@@ -87,7 +89,7 @@ export default async function DashboardPage({
     roas: current.adSpend > 0 ? current.grossRevenue / current.adSpend : null,
     negativeMarginProductShare: ranking.length ? (lossProducts.length / ranking.length) * 100 : 0,
     returnRatePercent: 0,
-    revenueGrowthPercent: financialEngine.percentChange(current.grossRevenue, prev.grossRevenue)?.toNumber() ?? null,
+    revenueGrowthPercent: prev ? (financialEngine.percentChange(current.grossRevenue, prev.grossRevenue)?.toNumber() ?? null) : null,
     connectedIntegrationsHealthy: 1,
   });
 
@@ -110,13 +112,13 @@ export default async function DashboardPage({
         <MetricCard
           label="Faturamento"
           value={formatCurrency(current.grossRevenue)}
-          changePercent={financialEngine.percentChange(current.grossRevenue, prev.grossRevenue)?.toNumber() ?? null}
+          changePercent={prev ? (financialEngine.percentChange(current.grossRevenue, prev.grossRevenue)?.toNumber() ?? null) : null}
           tooltip="Total vendido no período, antes de qualquer dedução."
         />
         <MetricCard
           label="Lucro líquido"
           value={formatCurrency(current.netProfit)}
-          changePercent={financialEngine.percentChange(current.netProfit, prev.netProfit)?.toNumber() ?? null}
+          changePercent={prev ? (financialEngine.percentChange(current.netProfit, prev.netProfit)?.toNumber() ?? null) : null}
           tooltip="Faturamento menos comissões, taxas, ADS, custo dos produtos, frete e impostos."
           tone={current.netProfit >= 0 ? "success" : "destructive"}
         />
@@ -128,7 +130,7 @@ export default async function DashboardPage({
         <MetricCard
           label="Pedidos"
           value={current.orderCount.toLocaleString("pt-BR")}
-          changePercent={financialEngine.percentChange(current.orderCount, prev.orderCount)?.toNumber() ?? null}
+          changePercent={prev ? (financialEngine.percentChange(current.orderCount, prev.orderCount)?.toNumber() ?? null) : null}
         />
         <MetricCard label="Ticket médio" value={formatCurrency(current.averageTicket)} tooltip="Faturamento dividido pelo número de pedidos." />
         <MetricCard label="Gastos com ADS" value={formatCurrency(current.adSpend)} tooltip="Investimento em publicidade atribuído aos pedidos do período." />

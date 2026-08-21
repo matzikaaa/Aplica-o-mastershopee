@@ -11,6 +11,7 @@ const PRESETS: { value: DateRangePreset; label: string }[] = [
   { value: "last_30_days", label: "Últimos 30 dias" },
   { value: "this_month", label: "Este mês" },
   { value: "last_month", label: "Mês passado" },
+  { value: "all_time", label: "Desde o início" },
 ];
 
 /** §10 — period filter that drives every KPI/chart on the page via the `period` search param. */

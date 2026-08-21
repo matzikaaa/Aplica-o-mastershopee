@@ -19,7 +19,22 @@ export interface Insight {
  * headline here is a plain-language restatement of numbers shown right
  * next to it — never an inference presented without the data behind it.
  */
-export async function generateInsights(workspaceId: string, range: DateRange, previousRange: DateRange): Promise<Insight[]> {
+/**
+ * `previousRange` is null for "Desde o início": there is no window before
+ * everything. Comparison-shaped insights ("lucro subiu X%") are simply not
+ * produced then, instead of being computed against an empty period and
+ * reported as a real movement.
+ */
+export async function generateInsights(
+  workspaceId: string,
+  range: DateRange,
+  previousRange: DateRange | null,
+): Promise<Insight[]> {
+  if (!previousRange) {
+    const lossInsight = await getLossMakingProductsInsight(workspaceId, range);
+    return lossInsight ? [lossInsight] : [];
+  }
+
   const insights: Insight[] = [];
 
   const [current, previous, lossProducts, adSpendMovers] = await Promise.all([
