@@ -178,7 +178,7 @@ Render, Fly.io, ou qualquer VPS). Sem ele:
 - `DailyMetric`/`ProductMetric` não são agregados;
 - alertas e relatório diário no WhatsApp não disparam.
 
-Para subir em qualquer um deles, o comando é
-`pnpm --filter @mastershopee/worker start`, com as mesmas variáveis
-`DATABASE_URL`, `REDIS_URL`, `CREDENTIALS_ENCRYPTION_KEY` e as credenciais de
-marketplace.
+Há um `apps/worker/Dockerfile` pronto, construído a partir da raiz do
+repositório. O passo a passo para Railway, Render e Fly.io — com as variáveis
+necessárias e as armadilhas de cada um — está em
+[`docs/worker/deploy.md`](docs/worker/deploy.md).
