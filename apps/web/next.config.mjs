@@ -47,9 +47,12 @@ const nextConfig = {
     // arvore simbolica que o pnpm monta. Sem isso ele fica de fora do pacote
     // da funcao serverless e a rota estoura com "could not locate the Query
     // Engine" — em execucao, com o build todo verde.
+    // A chave casa com o *caminho da rota*, onde grupos como (dashboard) nao
+    // aparecem — uma chave "/(dashboard)/**/*" nao casa com nada, e as
+    // paginas do painel subiam sem o motor enquanto as rotas de API
+    // funcionavam. Um glob unico cobre os dois e nao tem como divergir.
     outputFileTracingIncludes: {
-      "/api/**/*": ["../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.node"],
-      "/(dashboard)/**/*": ["../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.node"],
+      "/**/*": ["../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.node"],
     },
   },
   // Security headers (§38) — applied to every response, including API routes.
