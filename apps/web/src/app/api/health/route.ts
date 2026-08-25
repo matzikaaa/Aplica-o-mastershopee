@@ -30,10 +30,17 @@ export async function GET(request: Request) {
   const authUrlMatchesOrigin = configuredUrl === null ? null : configuredUrl === requestOrigin;
 
   const problems: string[] = [];
-  if (!database.ok) {
+  if (!database.configured) {
+    problems.push("DATABASE_URL não está configurado neste ambiente. Adicione a connection string do Neon (a com \"-pooler\") e faça um novo deploy.");
+  } else if (!database.ok) {
     problems.push(
-      `Banco inacessível (${database.code}). Confira DATABASE_URL na Vercel — use a string com "-pooler" e verifique se a senha real substituiu o placeholder.`,
+      `Banco inacessível (${database.code}). ${database.detail ?? ""}`.trim() +
+        (database.pooled === false
+          ? ' O host não tem "-pooler": para funções serverless use a string pooled.'
+          : ""),
     );
+  } else if (database.plans === 0) {
+    problems.push("Banco conectado, mas sem catálogo de planos — falta rodar prisma/seed.ts.");
   }
   if (configuredUrl === null) {
     problems.push("NEXTAUTH_URL não configurado. Sem ele o login recusa senhas corretas dizendo que estão erradas.");
@@ -71,15 +78,59 @@ export async function GET(request: Request) {
   return NextResponse.json(body, { status: body.ok ? 200 : 503 });
 }
 
-async function checkDatabase(): Promise<{ ok: boolean; code: string; plans: number | null }> {
+interface DatabaseCheck {
+  ok: boolean;
+  code: string;
+  plans: number | null;
+  /** Whether DATABASE_URL exists at all — "unset" and "wrong" look identical otherwise. */
+  configured: boolean;
+  /** Host only, so pooled-vs-direct is visible. Never the user or password. */
+  host: string | null;
+  pooled: boolean | null;
+  detail: string | null;
+}
+
+async function checkDatabase(): Promise<DatabaseCheck> {
+  const raw = process.env.DATABASE_URL?.trim();
+  let host: string | null = null;
+  try {
+    if (raw) host = new URL(raw).hostname;
+  } catch {
+    host = "não foi possível ler a URL";
+  }
+
+  const base = {
+    configured: Boolean(raw),
+    host,
+    pooled: host ? host.includes("-pooler") : null,
+  };
+
   try {
     // Counting plans proves the connection *and* that the migrations and the
     // plan seed actually ran — an empty catalogue means every login lands in
     // a workspace with no subscription to check.
     const plans = await prisma.plan.count();
-    return { ok: true, code: "ok", plans };
+    return { ...base, ok: true, code: "ok", plans, detail: null };
   } catch (err) {
     const code = (err as { errorCode?: string; code?: string }).errorCode ?? (err as { code?: string }).code ?? "unknown";
-    return { ok: false, code: String(code), plans: null };
+    return { ...base, ok: false, code: String(code), plans: null, detail: sanitize(err) };
   }
+}
+
+/**
+ * Prisma's own message names the fault far better than any wrapper could
+ * ("Environment variable not found", "Authentication failed"), so it is worth
+ * surfacing — with any embedded credentials scrubbed first, since connection
+ * strings do appear in some of these messages.
+ */
+function sanitize(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return message
+    .replace(/:\/\/[^@\s]+@/g, "://[credenciais]@")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join(" ")
+    .slice(0, 300);
 }
