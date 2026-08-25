@@ -41,6 +41,17 @@ const nextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  experimental: {
+    // O motor de query do Prisma e um binario, nao um import: o rastreamento
+    // de arquivos do Next nao o enxerga sozinho, e menos ainda dentro da
+    // arvore simbolica que o pnpm monta. Sem isso ele fica de fora do pacote
+    // da funcao serverless e a rota estoura com "could not locate the Query
+    // Engine" — em execucao, com o build todo verde.
+    outputFileTracingIncludes: {
+      "/api/**/*": ["../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.node"],
+      "/(dashboard)/**/*": ["../../node_modules/.pnpm/@prisma+client*/node_modules/.prisma/client/*.node"],
+    },
+  },
   // Security headers (§38) — applied to every response, including API routes.
   async headers() {
     return [

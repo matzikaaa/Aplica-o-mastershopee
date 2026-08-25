@@ -4,6 +4,11 @@
 
 generator client {
   provider = "prisma-client-js"
+  // "native" e o motor da maquina de quem desenvolve; rhel-openssl-3.0.x e o
+  // runtime das funcoes serverless da Vercel. Sem declarar o segundo, o
+  // generate roda no build da Vercel e produz so o motor do build, e a funcao
+  // sobe sem o motor que ela mesma precisa — falha em execucao, nao no build.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
