@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@mastershopee/database";
-import { createProvider, encryptSecret, MarketplaceApiError } from "@mastershopee/integrations";
+import { createProvider, encryptSecret } from "@mastershopee/integrations";
 import { getIntegrationEnv } from "@/lib/integration-env";
 import { SLUG_TO_MARKETPLACE } from "@/lib/marketplace-slug";
 import { cookies } from "next/headers";
@@ -32,6 +32,11 @@ export async function GET(request: Request, { params }: { params: { marketplace:
     return NextResponse.redirect(new URL("/integrations?error=invalid_state", request.url));
   }
 
+  // Guardado fora do try: se algo falhar depois de a conta existir, ela não
+  // pode ficar parada em "Sincronizando" para sempre — a tela estaria
+  // afirmando que há uma sincronização em andamento que não existe.
+  let accountId: string | null = null;
+
   try {
     const provider = createProvider(marketplace, getIntegrationEnv());
     const token = await provider.exchangeAuthorizationCode(code, shopId);
@@ -54,6 +59,8 @@ export async function GET(request: Request, { params }: { params: { marketplace:
         connectedAt: new Date(),
       },
     });
+
+    accountId = account.id;
 
     await prisma.marketplaceCredential.upsert({
       where: { marketplaceAccountId: account.id },
@@ -120,7 +127,22 @@ export async function GET(request: Request, { params }: { params: { marketplace:
     );
   } catch (err) {
     captureError(err, { marketplace, workspaceId: verified.workspaceId, route: "integrations.callback" });
-    const message = err instanceof MarketplaceApiError ? err.message : "Falha ao conectar com o marketplace.";
-    return NextResponse.redirect(new URL(`/integrations?error=oauth_failed&message=${encodeURIComponent(message)}`, request.url));
+
+    // A mensagem real vai para a tela, não "falha ao conectar". As causas aqui
+    // são de configuração — CREDENTIALS_ENCRYPTION_KEY ausente, por exemplo —
+    // e um texto genérico transforma uma causa nomeada em tentativa às cegas.
+    // Truncada porque nada garante o tamanho de um erro de biblioteca.
+    const message = (err instanceof Error ? err.message : "Falha ao conectar com o marketplace.").slice(0, 300);
+
+    if (accountId) {
+      await prisma.marketplaceAccount.update({
+        where: { id: accountId },
+        data: { status: "ERROR", lastErrorMessage: message },
+      });
+    }
+
+    return NextResponse.redirect(
+      new URL(`/integrations?error=oauth_failed&message=${encodeURIComponent(message)}`, request.url),
+    );
   }
 }

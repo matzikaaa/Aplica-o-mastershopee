@@ -43,6 +43,24 @@ describe("ShopeeProvider.exchangeAuthorizationCode", () => {
     expect(sent.shop_id).toBeUndefined();
   });
 
+  it("usa o shop_id do redirect quando a resposta do token não traz — nunca a string \"undefined\"", async () => {
+    // String(undefined) atravessa a gravação inteira sem erro e reaparece como
+    // uma conta "SHOPEE — undefined" apontando para loja nenhuma.
+    captureExchange({ access_token: "at", refresh_token: "rt", expire_in: 14400 });
+    const token = await new ShopeeProvider("2042290", KEY, "https://x/cb", "live").exchangeAuthorizationCode(
+      "c",
+      "987654",
+    );
+    expect(token.externalShopId).toBe("987654");
+  });
+
+  it("recusa quando nem a resposta nem o redirect identificam a loja", async () => {
+    captureExchange({ access_token: "at", refresh_token: "rt", expire_in: 14400 });
+    await expect(
+      new ShopeeProvider("2042290", KEY, "https://x/cb", "live").exchangeAuthorizationCode("c"),
+    ).rejects.toThrow(/shop_id/);
+  });
+
   it("propaga o erro da Shopee em vez de devolver um token vazio", async () => {
     captureExchange({ error: "error_param", message: "shop_id is required" });
 

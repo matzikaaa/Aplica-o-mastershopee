@@ -52,8 +52,11 @@ export async function GET(request: Request) {
   if (!process.env.AUTH_SECRET && !process.env.NEXTAUTH_SECRET) {
     problems.push("AUTH_SECRET não configurado — sessões não podem ser assinadas.");
   }
-  if (!process.env.CREDENTIALS_ENCRYPTION_KEY) {
-    problems.push("CREDENTIALS_ENCRYPTION_KEY não configurado — credenciais de marketplace não podem ser cifradas.");
+  const credentialsKey = describeCredentialsKey();
+  if (credentialsKey !== "ok") {
+    problems.push(
+      `CREDENTIALS_ENCRYPTION_KEY ${credentialsKey}. Gere com \`openssl rand -base64 32\` e configure na Vercel — sem isso, conectar um marketplace cria a conta e falha ao salvar o token.`,
+    );
   }
 
   const body = {
@@ -65,7 +68,7 @@ export async function GET(request: Request) {
       requestOrigin,
       matchesOrigin: authUrlMatchesOrigin,
       hasSecret: Boolean(process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET),
-      hasCredentialsKey: Boolean(process.env.CREDENTIALS_ENCRYPTION_KEY),
+      credentialsKey,
     },
     // Optional pieces: absent is a documented, working state, not a fault.
     optional: {
@@ -78,6 +81,20 @@ export async function GET(request: Request) {
   };
 
   return NextResponse.json(body, { status: body.ok ? 200 : 503 });
+}
+
+/**
+ * Sem esta chave nenhum token de marketplace pode ser gravado: `encryptSecret`
+ * lança, e a conexão morre logo depois de criar a conta — deixando a tela
+ * dizendo "Sincronizando" para uma conta sem token. Reportar só "presente"
+ * não bastava: uma chave com tamanho errado falha do mesmo jeito e parece
+ * configurada. O tamanho em bytes é seguro de mostrar; o valor nunca.
+ */
+function describeCredentialsKey(): string {
+  const raw = process.env.CREDENTIALS_ENCRYPTION_KEY;
+  if (!raw) return "ausente — impossível conectar marketplaces";
+  const bytes = Buffer.from(raw, "base64").length;
+  return bytes === 32 ? "ok" : `tamanho inválido: ${bytes} bytes, precisa 32`;
 }
 
 interface DatabaseCheck {

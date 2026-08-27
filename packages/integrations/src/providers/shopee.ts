@@ -549,11 +549,23 @@ export class ShopeeProvider implements MarketplaceProvider {
     if (data.error) {
       throw new MarketplaceApiError(`Shopee: ${data.error} — ${data.message}`, "SHOPEE");
     }
+    // `String(undefined)` vira a string "undefined", que passa por toda a
+    // gravação sem erro e reaparece como conta chamada "SHOPEE — undefined"
+    // apontando para uma loja que não existe. O shop_id do redirect é a mesma
+    // loja e já está em mãos.
+    const externalShopId = data.shop_id != null ? String(data.shop_id) : shopId;
+    if (!externalShopId) {
+      throw new MarketplaceApiError(
+        "A Shopee não devolveu shop_id na troca do token e o redirect também não trouxe — não dá para saber qual loja foi autorizada.",
+        "SHOPEE",
+      );
+    }
+
     return {
       accessToken: data.access_token,
       refreshToken: data.refresh_token,
       accessTokenExpiresAt: new Date(Date.now() + data.expire_in * 1000),
-      externalShopId: String(data.shop_id),
+      externalShopId,
     };
   }
 
