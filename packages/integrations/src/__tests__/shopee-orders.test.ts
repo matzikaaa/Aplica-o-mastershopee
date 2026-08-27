@@ -169,3 +169,104 @@ describe("stripShopeePersonalData — o que não entra em conta não entra no ba
     expect(JSON.stringify(o.raw)).toContain("Lavanda");
   });
 });
+
+/**
+ * Payload real do pedido 2608233N576795, reduzido aos campos que entram em
+ * conta. Os números são os que a Shopee devolveu — é o que torna este teste
+ * uma verificação e não uma repetição do que o código já faz.
+ */
+const pedidoReal = {
+  order_sn: "2608233N576795",
+  order_status: "TO_CONFIRM_RECEIVE",
+  create_time: 1_787_426_603,
+  currency: "BRL",
+  actual_shipping_fee: 13.25,
+  estimated_shipping_fee: 13.25,
+  total_amount: 18.99,
+  item_list: [
+    {
+      item_id: 58212226954,
+      item_name: "Sacos Lixo Perfumados Lavanda 10L 34x38cm Pia Banheiro Cozinha Anti Odor Resistente",
+      item_sku: "",
+      model_id: 179417005405,
+      model_name: "2 Unidades (80 Sacos)",
+      model_sku: "LAVANDROLL-2",
+      model_quantity_purchased: 1,
+      model_original_price: 24.68,
+      model_discounted_price: 18.99,
+    },
+  ],
+};
+
+const escrowReal = {
+  order_sn: "2608233N576795",
+  order_income: {
+    escrow_amount: 10.7,
+    order_selling_price: 18.99,
+    original_price: 24.68,
+    seller_discount: 5.69,
+    commission_fee: 3.42,
+    service_fee: 4.38,
+    seller_transaction_fee: 0,
+    buyer_paid_shipping_fee: 0,
+    actual_shipping_fee: 13.25,
+    shopee_shipping_rebate: 13.25,
+    seller_shipping_discount: 0,
+    // A taxa que uma soma de campos escolhidos a dedo deixava passar.
+    shipping_seller_protection_fee_amount: 0.49,
+  },
+};
+
+describe("pedido real da Shopee — o cálculo tem que fechar com o repasse", () => {
+  it("reconstrói exatamente o escrow_amount que a Shopee informou", () => {
+    const o = normalizeShopeeOrder(pedidoReal, escrowReal);
+
+    const liquido =
+      Number(o.grossAmount) -
+      Number(o.discountAmount) +
+      Number(o.shippingChargedToBuyer) -
+      Number(o.commissionAmount) -
+      Number(o.marketplaceFeeAmount) -
+      Number(o.shippingSubsidizedByMerchant);
+
+    expect(liquido).toBeCloseTo(10.7, 2);
+  });
+
+  it("inclui a taxa de proteção de frete, que somar campos deixava de fora", () => {
+    const o = normalizeShopeeOrder(pedidoReal, escrowReal);
+    // service_fee 4,38 + proteção 0,49. Somar só service_fee daria 4,38 e
+    // transformaria R$ 0,49 de custo em lucro, em todo pedido.
+    expect(o.marketplaceFeeAmount).toBe("4.8700");
+    expect(o.commissionAmount).toBe("3.4200");
+  });
+
+  it("confirma frete zero para o vendedor quando a Shopee subsidia tudo", () => {
+    const o = normalizeShopeeOrder(pedidoReal, escrowReal);
+    // actual 13,25 coberto por rebate 13,25: não sai do bolso do vendedor.
+    expect(o.shippingSubsidizedByMerchant).toBe("0.0000");
+  });
+
+  it("pega o SKU da variação quando o anúncio não tem SKU próprio", () => {
+    const o = normalizeShopeeOrder(pedidoReal, escrowReal);
+    expect(o.items[0]!.externalSku).toBe("LAVANDROLL-2");
+    expect(o.status).toBe("SHIPPED");
+  });
+
+  it("volta a somar campos quando não há escrow_amount para ancorar", () => {
+    const o = normalizeShopeeOrder(pedidoReal, {
+      order_income: { ...escrowReal.order_income, escrow_amount: 0 },
+    });
+    expect(o.marketplaceFeeAmount).toBe("4.3800");
+  });
+
+  it("remove o nome do comprador, cuja chave é buyer_user_name", () => {
+    const o = normalizeShopeeOrder(pedidoReal, {
+      ...escrowReal,
+      // @ts-expect-error — campo que a Shopee devolve fora do tipo declarado
+      buyer_user_name: "elianenunes298",
+      buyer_payment_info: { buyer_payment_method: "Pix", buyer_total_amount: 18.99 },
+    });
+    expect(JSON.stringify(o.raw)).not.toContain("elianenunes298");
+    expect(JSON.stringify(o.raw)).not.toContain("buyer_payment_info");
+  });
+});

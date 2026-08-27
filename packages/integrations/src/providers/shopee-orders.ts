@@ -70,7 +70,9 @@ export interface ShopeeOrderDetailRaw {
 export interface ShopeeEscrowRaw {
   order_sn?: string;
   order_income?: {
+    /** O que a Shopee de fato repassa ao vendedor. É a âncora do cálculo. */
     escrow_amount?: number;
+    order_selling_price?: number;
     buyer_total_amount?: number;
     buyer_paid_shipping_fee?: number;
     actual_shipping_fee?: number;
@@ -97,6 +99,9 @@ const money = (value: number | undefined, currency: string) => Money.of(value ??
 const PERSONAL_DATA_KEYS = new Set([
   "recipient_address",
   "buyer_username",
+  // A chave real no escrow é esta, com underscore no meio de "user_name".
+  "buyer_user_name",
+  "buyer_payment_info",
   "buyer_user_id",
   "buyer_cpf_id",
   "buyer_email",
@@ -168,8 +173,6 @@ export function normalizeShopeeOrder(
   const feesFromEscrow = Boolean(income);
 
   const commission = money(income?.commission_fee, currency);
-  const serviceFee = money(income?.service_fee, currency);
-  const transactionFee = money(income?.seller_transaction_fee, currency);
 
   const buyerPaidShipping = income
     ? money(income.buyer_paid_shipping_fee, currency)
@@ -185,6 +188,35 @@ export function normalizeShopeeOrder(
     ? money(income.seller_shipping_discount, currency).add(uncovered.isNegative() ? Money.zero(currency) : uncovered)
     : Money.zero(currency);
 
+  // As taxas saem do que a Shopee diz que vai repassar, não de uma soma de
+  // campos escolhidos a dedo.
+  //
+  // `order_income` tem mais de oitenta chaves e a Shopee acrescenta novas sem
+  // aviso. Somar commission + service + transaction parecia bater, e não
+  // batia: faltava `shipping_seller_protection_fee_amount`, R$ 0,49 por
+  // pedido que sumia do custo e reaparecia como lucro. Uma lista de campos
+  // erra sempre para o mesmo lado — para menos taxa, mais lucro.
+  //
+  // `escrow_amount` é o número que cai na conta do vendedor. Derivar as taxas
+  // dele fecha por construção: o que a Shopee reteve é o que ela não
+  // repassou, seja qual for o nome que ela deu à retenção.
+  const sellingPrice =
+    income?.order_selling_price != null ? money(income.order_selling_price, currency) : gross.subtract(discount);
+  const escrowAmount = money(income?.escrow_amount, currency);
+  const canReconcile = (income?.escrow_amount ?? 0) > 0;
+
+  let otherFees: Money;
+  if (canReconcile) {
+    const withheld = sellingPrice.add(buyerPaidShipping).subtract(escrowAmount);
+    const rest = withheld.subtract(commission).subtract(merchantShipping);
+    // Um resíduo negativo significaria que o frete por conta do vendedor já
+    // foi contado em outro lugar; zerar aqui evita virar taxa negativa, que
+    // apareceria como lucro extra.
+    otherFees = rest.isNegative() ? Money.zero(currency) : rest;
+  } else {
+    otherFees = money(income?.service_fee, currency).add(money(income?.seller_transaction_fee, currency));
+  }
+
   return {
     externalOrderId: detail.order_sn,
     marketplace: "SHOPEE",
@@ -196,7 +228,7 @@ export function normalizeShopeeOrder(
     shippingChargedToBuyer: buyerPaidShipping.toFixed(4),
     shippingSubsidizedByMerchant: merchantShipping.toFixed(4),
     commissionAmount: commission.toFixed(4),
-    marketplaceFeeAmount: serviceFee.add(transactionFee).toFixed(4),
+    marketplaceFeeAmount: otherFees.toFixed(4),
     taxAmount: "0",
     items,
     feesFromEscrow,
