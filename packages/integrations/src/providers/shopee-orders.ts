@@ -85,6 +85,39 @@ export interface ShopeeEscrowRaw {
 const money = (value: number | undefined, currency: string) => Money.of(value ?? 0, currency);
 
 /**
+ * Dados do comprador que a Shopee devolve junto e que esta aplicação não usa
+ * para nada: nome, telefone, documento e endereço de entrega.
+ *
+ * O payload cru é guardado em Order.rawPayload para permitir recalcular sem
+ * ressincronizar. Guardar junto o endereço de cada comprador seria acumular
+ * dado pessoal sem finalidade — e sem finalidade não há base legal para
+ * tratar (LGPD art. 6º, I e III). O que serve ao cálculo fica; o resto não
+ * chega ao banco.
+ */
+const PERSONAL_DATA_KEYS = new Set([
+  "recipient_address",
+  "buyer_username",
+  "buyer_user_id",
+  "buyer_cpf_id",
+  "buyer_email",
+  "buyer_phone",
+  "note",
+  "message_to_seller",
+]);
+
+export function stripShopeePersonalData<T>(payload: T): T {
+  if (Array.isArray(payload)) return payload.map(stripShopeePersonalData) as unknown as T;
+  if (payload === null || typeof payload !== "object") return payload;
+
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload as Record<string, unknown>)) {
+    if (PERSONAL_DATA_KEYS.has(key)) continue;
+    out[key] = stripShopeePersonalData(value);
+  }
+  return out as T;
+}
+
+/**
  * O SKU é a chave que liga o pedido ao custo cadastrado. A Shopee tem dois:
  * o da variação (`model_sku`) e o do item (`item_sku`). Quem vende variações
  * cadastra o custo por variação, então ela vem primeiro; o item_id é o último
@@ -167,8 +200,10 @@ export function normalizeShopeeOrder(
     taxAmount: "0",
     items,
     feesFromEscrow,
-    // O payload cru inteiro fica guardado: se algum mapeamento acima estiver
-    // errado, dá para recalcular sem sincronizar tudo de novo.
-    raw: { detail, escrow },
+    // O payload financeiro fica guardado: se algum mapeamento acima estiver
+    // errado, dá para recalcular sem sincronizar tudo de novo. Os dados do
+    // comprador saem antes — não entram em nenhuma conta e não têm por que
+    // ficar no banco.
+    raw: stripShopeePersonalData({ detail, escrow }),
   };
 }

@@ -6,6 +6,7 @@ export * from "./registry";
 export * from "./providers/mercado-livre";
 export * from "./providers/shopee";
 export * from "./providers/shopee-key";
+export * from "./providers/shopee-orders";
 export * from "./providers/shein";
 export * from "./providers/tiktok-shop";
 

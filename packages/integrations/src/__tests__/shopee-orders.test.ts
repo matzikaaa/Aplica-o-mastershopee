@@ -131,3 +131,41 @@ describe("normalizeShopeeStatus", () => {
     expect(normalizeShopeeStatus("ALGO_NOVO_DA_SHOPEE")).toBe("CREATED");
   });
 });
+
+describe("stripShopeePersonalData — o que não entra em conta não entra no banco", () => {
+  it("remove endereço, nome e documento do comprador, em qualquer profundidade", () => {
+    const o = normalizeShopeeOrder(
+      {
+        ...detail,
+        // @ts-expect-error — campos que a Shopee devolve e o tipo não declara
+        buyer_username: "fulano123",
+        buyer_cpf_id: "000.000.000-00",
+        recipient_address: { name: "Fulano de Tal", phone: "11999999999", full_address: "Rua X, 123" },
+        note: "deixar com o vizinho",
+      },
+      escrow,
+    );
+
+    const serialized = JSON.stringify(o.raw);
+    expect(serialized).not.toContain("fulano123");
+    expect(serialized).not.toContain("Fulano de Tal");
+    expect(serialized).not.toContain("11999999999");
+    expect(serialized).not.toContain("Rua X");
+    expect(serialized).not.toContain("vizinho");
+  });
+
+  it("preserva tudo que serve ao cálculo", () => {
+    const o = normalizeShopeeOrder(detail, escrow);
+    const raw = o.raw as { detail: typeof detail; escrow: typeof escrow };
+
+    expect(raw.escrow.order_income.commission_fee).toBe(8.5);
+    expect(raw.escrow.order_income.actual_shipping_fee).toBe(21.4);
+    expect(raw.detail.item_list[0]!.model_sku).toBe("LAVANDROLL-1-LAV");
+    expect(raw.detail.item_list[0]!.model_original_price).toBe(49.9);
+  });
+
+  it("não confunde model_name com nome de pessoa", () => {
+    const o = normalizeShopeeOrder(detail, escrow);
+    expect(JSON.stringify(o.raw)).toContain("Lavanda");
+  });
+});
