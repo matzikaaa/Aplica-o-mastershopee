@@ -49,6 +49,13 @@ export {
 } from "./stock";
 
 export {
+  resolveFreshCredentials,
+  MissingCredentialsError,
+  type ResolvedCredentials,
+  type RefreshableProvider,
+} from "./marketplace-credentials";
+
+export {
   upsertMarketplaceProduct,
   ensureProductForOrderItem,
   type UpsertProductInput,

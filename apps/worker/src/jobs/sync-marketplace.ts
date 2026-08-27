@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { prisma, upsertMarketplaceProduct, upsertNormalizedOrder } from "@mastershopee/database";
+import {
+  prisma,
+  resolveFreshCredentials,
+  upsertMarketplaceProduct,
+  upsertNormalizedOrder,
+} from "@mastershopee/database";
 import {
   createProvider,
   decryptSecret,
@@ -57,34 +62,39 @@ export async function runMarketplaceSync(data: MarketplaceSyncJobData): Promise<
   await prisma.marketplaceAccount.update({ where: { id: account.id }, data: { status: "SYNCING" } });
 
   const provider = createProvider(account.marketplace, getIntegrationEnv());
-  const credentials: ProviderCredentials = {
-    accessToken: decryptSecret(account.credential.encryptedAccessToken),
-    refreshToken: account.credential.encryptedRefreshToken ? decryptSecret(account.credential.encryptedRefreshToken) : undefined,
-    externalShopId: account.externalShopId,
-  };
 
   const limiter = getRateLimiter(account.marketplace);
   let itemsProcessed = 0;
 
+  let credentials: ProviderCredentials;
   try {
-    // Refresh the access token proactively if it's near expiry.
-    if (account.credential.accessTokenExpiresAt && account.credential.accessTokenExpiresAt < new Date(Date.now() + 5 * 60 * 1000)) {
-      if (credentials.refreshToken) {
-        await limiter.acquire(account.id);
-        const refreshed = await provider.refreshAccessToken(credentials.refreshToken);
-        credentials.accessToken = refreshed.accessToken;
-        await prisma.marketplaceCredential.update({
-          where: { marketplaceAccountId: account.id },
-          data: {
-            encryptedAccessToken: encryptSecret(refreshed.accessToken),
-            encryptedRefreshToken: refreshed.refreshToken ? encryptSecret(refreshed.refreshToken) : undefined,
-            accessTokenExpiresAt: refreshed.accessTokenExpiresAt,
-            rotatedAt: new Date(),
-          },
-        });
-      }
-    }
+    // Mesma renovação que a aplicação web usa: o token da Shopee vale 4
+    // horas e o refresh exige o shop_id junto.
+    credentials = await resolveFreshCredentials({
+      accountId: account.id,
+      externalShopId: account.externalShopId,
+      provider,
+      encrypt: encryptSecret,
+      decrypt: decryptSecret,
+    });
+  } catch (err) {
+    await prisma.integrationSync.update({
+      where: { id: syncRecord.id },
+      data: {
+        status: "FAILED",
+        finishedAt: new Date(),
+        errorMessage: err instanceof Error ? err.message : "credenciais indisponíveis",
+        lockKey: null,
+      },
+    });
+    await prisma.marketplaceAccount.update({
+      where: { id: account.id },
+      data: { status: "TOKEN_EXPIRED", lastErrorMessage: err instanceof Error ? err.message : null },
+    });
+    return;
+  }
 
+  try {
     // ── Products ────────────────────────────────────────────────────
     let productCursor = { value: account.lastSyncCursor };
     let hasMoreProducts = true;

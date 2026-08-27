@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import {
   prisma,
   recomputeMetricsForDays,
+  resolveFreshCredentials,
   upsertMarketplaceProduct,
   upsertNormalizedOrder,
 } from "@mastershopee/database";
-import { ShopeeProvider, decryptSecret } from "@mastershopee/integrations";
+import { ShopeeProvider, decryptSecret, encryptSecret } from "@mastershopee/integrations";
 import { requireWorkspace } from "@/lib/session";
 import { getIntegrationEnv } from "@/lib/integration-env";
 
@@ -67,13 +68,23 @@ export async function POST(request: Request) {
     env.SHOPEE_KEY_ENCODING ?? "raw",
   );
 
-  const credentials = {
-    accessToken: decryptSecret(account.credential.encryptedAccessToken),
-    refreshToken: account.credential.encryptedRefreshToken
-      ? decryptSecret(account.credential.encryptedRefreshToken)
-      : undefined,
-    externalShopId: account.externalShopId,
-  };
+  // O token da Shopee vale 4 horas. Sem renovar aqui, a importação passa a
+  // falhar com "invalid_access_token" algumas horas depois de conectar.
+  let credentials;
+  try {
+    credentials = await resolveFreshCredentials({
+      accountId: account.id,
+      externalShopId: account.externalShopId,
+      provider,
+      encrypt: encryptSecret,
+      decrypt: decryptSecret,
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Falha ao renovar o acesso à Shopee." },
+      { status: 409 },
+    );
+  }
 
   // Retomar de onde parou é o padrão; `restart` reabre a janela inteira, para
   // quando um mapeamento foi corrigido e os pedidos precisam ser regravados.

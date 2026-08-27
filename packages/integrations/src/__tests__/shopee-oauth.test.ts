@@ -94,3 +94,27 @@ describe("ShopeeProvider.getAuthorizationUrl", () => {
     expect(url.searchParams.get("sign")).toMatch(/^[0-9a-f]{64}$/);
   });
 });
+
+describe("ShopeeProvider.refreshAccessToken", () => {
+  it("manda o shop_id — a Shopee exige a loja também na renovação", async () => {
+    const spy = captureExchange({
+      access_token: "novo",
+      refresh_token: "novo-rt",
+      expire_in: 14400,
+      shop_id: 987654,
+    });
+
+    const token = await new ShopeeProvider("2042290", KEY, "https://x/cb", "live").refreshAccessToken(
+      "rt-antigo",
+      "987654",
+    );
+
+    const sent = JSON.parse(String(spy.mock.calls[0]![1].body)) as Record<string, unknown>;
+    expect(sent.shop_id).toBe(987654);
+    expect(sent.refresh_token).toBe("rt-antigo");
+    expect(token.accessToken).toBe("novo");
+    // A Shopee invalida o refresh token anterior a cada renovação: guardar o
+    // novo é o que evita o vendedor ter que reconectar a cada 4 horas.
+    expect(token.refreshToken).toBe("novo-rt");
+  });
+});

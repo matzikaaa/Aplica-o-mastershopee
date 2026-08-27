@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@mastershopee/database";
-import { ShopeeProvider, decryptSecret } from "@mastershopee/integrations";
+import { prisma, resolveFreshCredentials } from "@mastershopee/database";
+import { ShopeeProvider, decryptSecret, encryptSecret } from "@mastershopee/integrations";
 import { requireWorkspace } from "@/lib/session";
 import { getIntegrationEnv } from "@/lib/integration-env";
 
@@ -68,13 +68,13 @@ export async function POST(request: Request) {
 
   try {
     const page = await provider.fetchOrders(
-      {
-        accessToken: decryptSecret(account.credential.encryptedAccessToken),
-        refreshToken: account.credential.encryptedRefreshToken
-          ? decryptSecret(account.credential.encryptedRefreshToken)
-          : undefined,
+      await resolveFreshCredentials({
+        accountId: account.id,
         externalShopId: account.externalShopId,
-      },
+        provider,
+        encrypt: encryptSecret,
+        decrypt: decryptSecret,
+      }),
       { value: null },
       new Date(Date.now() - days * 24 * 3600 * 1000),
     );

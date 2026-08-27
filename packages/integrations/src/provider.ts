@@ -41,7 +41,8 @@ export interface MarketplaceProvider {
   exchangeAuthorizationCode(code: string, shopId?: string): Promise<OAuthTokenResult>;
 
   /** Refreshes an expiring access token. */
-  refreshAccessToken(refreshToken: string): Promise<OAuthTokenResult>;
+  /** `shopId` pela mesma razão de `exchangeAuthorizationCode`: a Shopee exige a loja no corpo do refresh. */
+  refreshAccessToken(refreshToken: string, shopId?: string): Promise<OAuthTokenResult>;
 
   fetchProducts(credentials: ProviderCredentials, cursor: SyncCursor): Promise<FetchPage<NormalizedProduct>>;
 
