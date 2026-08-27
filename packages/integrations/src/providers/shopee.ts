@@ -10,6 +10,11 @@ import {
   type ShopeeKeyEncoding,
 } from "./shopee-key";
 import {
+  normalizeShopeeOrder,
+  type ShopeeEscrowRaw,
+  type ShopeeOrderDetailRaw,
+} from "./shopee-orders";
+import {
   MarketplaceApiError,
   MarketplaceNotImplementedError,
   type NormalizedOrder,
@@ -574,14 +579,19 @@ export class ShopeeProvider implements MarketplaceProvider {
     };
   }
 
-  async fetchProducts(
+  /**
+   * Uma chamada assinada de nível loja. Todas passam por aqui para que a
+   * assinatura, o tratamento de erro da Shopee e o formato do erro fiquem
+   * num lugar só — a Shopee devolve HTTP 200 com `error` no corpo, então
+   * checar `res.ok` sozinho deixa a falha passar silenciosamente.
+   */
+  private async shopRequest<T>(
+    path: string,
     credentials: ProviderCredentials,
-    cursor: SyncCursor,
-  ): Promise<FetchPage<NormalizedProduct>> {
-    const path = "/api/v2/product/get_item_list";
+    query: Record<string, string> = {},
+  ): Promise<T> {
     const timestamp = Math.floor(Date.now() / 1000);
     const sign = this.sign(path, timestamp, credentials.accessToken, credentials.externalShopId);
-    const offset = cursor.value ? Number(cursor.value) : 0;
 
     const url = new URL(this.partnerHost + path);
     url.searchParams.set("partner_id", this.partnerId);
@@ -589,85 +599,210 @@ export class ShopeeProvider implements MarketplaceProvider {
     url.searchParams.set("sign", sign);
     url.searchParams.set("shop_id", credentials.externalShopId);
     url.searchParams.set("access_token", credentials.accessToken);
-    url.searchParams.set("offset", String(offset));
-    url.searchParams.set("page_size", "50");
-    url.searchParams.set("item_status", "NORMAL");
+    for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v);
 
     const res = await fetch(url.toString());
-    if (!res.ok) {
+    const text = await res.text();
+
+    let body: { error?: string; message?: string; response?: T };
+    try {
+      body = JSON.parse(text) as typeof body;
+    } catch {
       throw new MarketplaceApiError(
-        `Chamada à API de produtos da Shopee falhou (HTTP ${res.status})`,
+        `Shopee respondeu algo que não é JSON em ${path} (HTTP ${res.status}).`,
         "SHOPEE",
         res.status,
       );
     }
-    const data = (await res.json()) as {
-      response: { item: { item_id: number; item_status: string }[]; has_next_page: boolean; next_offset: number };
-    };
 
-    // Item list only returns IDs — item basic info (title/sku/image) needs a
-    // follow-up call to /api/v2/product/get_item_base_info, omitted here for
-    // brevity but required for a complete implementation.
-    const items: NormalizedProduct[] = data.response.item.map((i) => ({
-      externalProductId: String(i.item_id),
-      sku: String(i.item_id),
-      title: `Shopee item ${i.item_id}`,
-      raw: i,
-    }));
+    if (body.error) {
+      throw new MarketplaceApiError(
+        `Shopee ${path}: ${body.error}${body.message ? ` — ${body.message}` : ""}`,
+        "SHOPEE",
+        res.status,
+        body.error,
+      );
+    }
+    if (!res.ok) {
+      throw new MarketplaceApiError(`Shopee ${path} falhou (HTTP ${res.status}).`, "SHOPEE", res.status);
+    }
+
+    return body.response as T;
+  }
+
+  async fetchProducts(
+    credentials: ProviderCredentials,
+    cursor: SyncCursor,
+  ): Promise<FetchPage<NormalizedProduct>> {
+    const offset = cursor.value ? Number(cursor.value) : 0;
+
+    const list = await this.shopRequest<{
+      item: { item_id: number }[];
+      has_next_page: boolean;
+      next_offset: number;
+    }>("/api/v2/product/get_item_list", credentials, {
+      offset: String(offset),
+      page_size: "50",
+      item_status: "NORMAL",
+    });
+
+    const itemIds = (list.item ?? []).map((i) => i.item_id);
+    if (itemIds.length === 0) {
+      return { items: [], nextCursor: { value: String(list.next_offset ?? 0) }, hasMore: Boolean(list.has_next_page) };
+    }
+
+    // get_item_list só devolve IDs. Sem esta segunda chamada o produto entra
+    // com o item_id no lugar do SKU, e aí nenhum custo cadastrado casa.
+    const base = await this.shopRequest<{
+      item_list: {
+        item_id: number;
+        item_name?: string;
+        item_sku?: string;
+        has_model?: boolean;
+        image?: { image_url_list?: string[] };
+      }[];
+    }>("/api/v2/product/get_item_base_info", credentials, {
+      item_id_list: itemIds.join(","),
+    });
+
+    const items: NormalizedProduct[] = [];
+
+    for (const item of base.item_list ?? []) {
+      const imageUrl = item.image?.image_url_list?.[0];
+      const title = item.item_name ?? `Shopee item ${item.item_id}`;
+
+      if (!item.has_model) {
+        items.push({
+          externalProductId: String(item.item_id),
+          sku: item.item_sku?.trim() || String(item.item_id),
+          title,
+          imageUrl,
+          raw: item,
+        });
+        continue;
+      }
+
+      // Quem vende variação cadastra custo por variação, e os pedidos vêm com
+      // `model_sku`. Um produto por anúncio, aqui, deixaria todo pedido de
+      // variação sem custo.
+      try {
+        const models = await this.shopRequest<{
+          model: { model_id: number; model_name?: string; model_sku?: string }[];
+        }>("/api/v2/product/get_model_list", credentials, { item_id: String(item.item_id) });
+
+        for (const model of models.model ?? []) {
+          items.push({
+            externalProductId: String(item.item_id),
+            externalVariationId: String(model.model_id),
+            sku: model.model_sku?.trim() || item.item_sku?.trim() || String(model.model_id),
+            title: model.model_name ? `${title} — ${model.model_name}` : title,
+            imageUrl,
+            raw: { item, model },
+          });
+        }
+      } catch {
+        // Perder as variações de um anúncio não justifica derrubar a página
+        // inteira; o anúncio entra sem variação e o log do sync registra.
+        items.push({
+          externalProductId: String(item.item_id),
+          sku: item.item_sku?.trim() || String(item.item_id),
+          title,
+          imageUrl,
+          raw: item,
+        });
+      }
+    }
 
     return {
       items,
-      nextCursor: { value: String(data.response.next_offset) },
-      hasMore: data.response.has_next_page,
+      nextCursor: { value: String(list.next_offset ?? 0) },
+      hasMore: Boolean(list.has_next_page),
     };
   }
+
+  /** Janela máxima documentada de consulta de pedidos: 15 dias por chamada. */
+  private static readonly ORDER_WINDOW_SECONDS = 15 * 24 * 3600;
 
   async fetchOrders(
     credentials: ProviderCredentials,
     cursor: SyncCursor,
     updatedAfter?: Date,
   ): Promise<FetchPage<NormalizedOrder>> {
-    const path = "/api/v2/order/get_order_list";
-    const timestamp = Math.floor(Date.now() / 1000);
-    const sign = this.sign(path, timestamp, credentials.accessToken, credentials.externalShopId);
+    const now = Math.floor(Date.now() / 1000);
 
-    // Shopee's order list is time-window based (max 15 days per call) rather
-    // than offset-based like Mercado Livre — cursor stores the last window's
-    // `next_cursor` token issued by Shopee itself.
-    const url = new URL(this.partnerHost + path);
-    url.searchParams.set("partner_id", this.partnerId);
-    url.searchParams.set("timestamp", String(timestamp));
-    url.searchParams.set("sign", sign);
-    url.searchParams.set("shop_id", credentials.externalShopId);
-    url.searchParams.set("access_token", credentials.accessToken);
-    url.searchParams.set("time_range_field", "update_time");
-    const from = updatedAfter ?? new Date(Date.now() - 15 * 24 * 3600 * 1000);
-    url.searchParams.set("time_from", String(Math.floor(from.getTime() / 1000)));
-    url.searchParams.set("time_to", String(Math.floor(Date.now() / 1000)));
-    url.searchParams.set("page_size", "50");
-    if (cursor.value) url.searchParams.set("cursor", cursor.value);
+    // O cursor carrega a janela junto com o cursor da Shopee. Sem isso, uma
+    // conta parada por dois meses só recuperaria os últimos 15 dias e os
+    // pedidos do meio sumiriam sem ninguém notar.
+    const [windowRaw, innerCursor = ""] = (cursor.value ?? "").split("|");
+    const defaultFrom = updatedAfter
+      ? Math.floor(updatedAfter.getTime() / 1000)
+      : now - ShopeeProvider.ORDER_WINDOW_SECONDS;
+    const from = windowRaw ? Number(windowRaw) : defaultFrom;
+    const to = Math.min(from + ShopeeProvider.ORDER_WINDOW_SECONDS, now);
 
-    const res = await fetch(url.toString());
-    if (!res.ok) {
-      throw new MarketplaceApiError(
-        `Chamada à API de pedidos da Shopee falhou (HTTP ${res.status})`,
-        "SHOPEE",
-        res.status,
-      );
-    }
-    const data = (await res.json()) as {
-      response: { order_list: { order_sn: string }[]; more: boolean; next_cursor: string };
+    const list = await this.shopRequest<{
+      order_list?: { order_sn: string }[];
+      more?: boolean;
+      next_cursor?: string;
+    }>("/api/v2/order/get_order_list", credentials, {
+      time_range_field: "update_time",
+      time_from: String(from),
+      time_to: String(to),
+      page_size: "50",
+      ...(innerCursor ? { cursor: innerCursor } : {}),
+    });
+
+    const advance = (): { nextCursor: SyncCursor; hasMore: boolean } => {
+      if (list.more && list.next_cursor) {
+        return { nextCursor: { value: `${from}|${list.next_cursor}` }, hasMore: true };
+      }
+      // Janela esgotada: anda para a próxima até alcançar o presente.
+      if (to < now) return { nextCursor: { value: `${to}|` }, hasMore: true };
+      return { nextCursor: { value: null }, hasMore: false };
     };
 
-    // NOTE: get_order_list only returns order_sn identifiers. A complete
-    // implementation calls /api/v2/order/get_order_detail in batches to
-    // fetch amounts/items/fees before normalizing — omitted here since it
-    // cannot be exercised without a live partner_id/partner_key.
-    throw new MarketplaceNotImplementedError(
-      "SHOPEE",
-      `fetchOrders detail hydration (found ${data.response.order_list.length} order IDs; ` +
-        "get_order_detail call pending real credentials to validate response shape)",
+    const orderSns = (list.order_list ?? []).map((o) => o.order_sn);
+    if (orderSns.length === 0) {
+      return { items: [], ...advance() };
+    }
+
+    const detail = await this.shopRequest<{ order_list?: ShopeeOrderDetailRaw[] }>(
+      "/api/v2/order/get_order_detail",
+      credentials,
+      {
+        order_sn_list: orderSns.join(","),
+        response_optional_fields: "item_list,total_amount,actual_shipping_fee,estimated_shipping_fee",
+      },
     );
+
+    const items: NormalizedOrder[] = [];
+    for (const order of detail.order_list ?? []) {
+      items.push(normalizeShopeeOrder(order, await this.fetchEscrow(credentials, order.order_sn)));
+    }
+
+    return { items, ...advance() };
+  }
+
+  /**
+   * As taxas que a Shopee cobra do vendedor só existem aqui, e é uma chamada
+   * por pedido — não há endpoint em lote.
+   *
+   * Devolve null em vez de estourar de propósito: um pedido que ainda não teve
+   * o repasse liberado, ou uma conta sem a API de pagamentos liberada, não
+   * podem derrubar a sincronização inteira. O pedido entra marcado como sem
+   * taxa confirmada, que é a verdade sobre ele.
+   */
+  private async fetchEscrow(
+    credentials: ProviderCredentials,
+    orderSn: string,
+  ): Promise<ShopeeEscrowRaw | null> {
+    try {
+      return await this.shopRequest<ShopeeEscrowRaw>("/api/v2/payment/get_escrow_detail", credentials, {
+        order_sn: orderSn,
+      });
+    } catch {
+      return null;
+    }
   }
 
   async fetchAdCampaigns(): Promise<never> {

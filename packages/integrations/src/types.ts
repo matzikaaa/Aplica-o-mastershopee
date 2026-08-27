@@ -19,6 +19,12 @@ export interface NormalizedOrder {
   marketplaceFeeAmount: string;
   taxAmount: string;
   items: NormalizedOrderItem[];
+  /**
+   * Se as taxas vieram da API financeira do marketplace ou não existem ainda.
+   * Falso significa receita sem taxa — lucro inflado — e a aplicação precisa
+   * marcar isso em vez de apresentar como resultado real (§61, §96).
+   */
+  feesFromEscrow?: boolean;
   raw: unknown;
 }
 
