@@ -49,6 +49,14 @@ export {
 } from "./stock";
 
 export {
+  upsertNormalizedOrder,
+  resolveCostSnapshot,
+  type UpsertOrderInput,
+  type UpsertOrderItemInput,
+  type UpsertOrderAccount,
+} from "./order-upsert";
+
+export {
   effectiveMarketplaceRates,
   allEffectiveMarketplaceRates,
   type EffectiveRates,

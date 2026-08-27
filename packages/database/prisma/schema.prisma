@@ -517,6 +517,13 @@ model Order {
   taxAmount              Decimal            @db.Decimal(14, 4) @default(0)
   adSpendAttributed      Decimal            @db.Decimal(14, 4) @default(0)
 
+  // As taxas da Shopee só existem em get_escrow_detail, e o escrow só fica
+  // disponível depois que o repasse é liberado. Um pedido sem escrow entra
+  // com comissão zero, o que infla o lucro — marcado aqui para a UI não
+  // apresentar isso como resultado fechado (§61, §96). Pedidos vindos das
+  // planilhas trazem as taxas do próprio relatório da Shopee: são reais.
+  feesAreEstimated       Boolean            @default(false)
+
   rawPayload             Json?
 
   createdAt              DateTime           @default(now())

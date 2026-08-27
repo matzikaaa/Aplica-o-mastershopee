@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Eye, TriangleAlert } from "lucide-react";
+import { Download, Eye, TriangleAlert } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
 interface PreviewOrder {
@@ -42,10 +43,21 @@ const brl = (v: string) =>
  * põe o cálculo ao lado do payload cru, para o vendedor comparar com o extrato
  * da Shopee. Nada aqui entra no banco.
  */
+interface SyncResult {
+  ok?: boolean;
+  error?: string;
+  ordersWritten?: number;
+  ordersWithoutConfirmedFees?: number;
+  hasMore?: boolean;
+}
+
 export function ShopeePreview() {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Preview | null>(null);
   const [open, setOpen] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [sync, setSync] = useState<SyncResult | null>(null);
 
   async function run() {
     setLoading(true);
@@ -59,20 +71,67 @@ export function ShopeePreview() {
     setLoading(false);
   }
 
+  async function importar() {
+    setSyncing(true);
+    setSync(null);
+    const res = await fetch("/api/integrations/shopee/sync-now", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ days: 30 }),
+    });
+    const data = (await res.json()) as SyncResult;
+    setSync(data);
+    setSyncing(false);
+    // O dashboard é server-rendered: sem isto, os pedidos recém-gravados só
+    // apareceriam no próximo carregamento manual.
+    if (data.ok) router.refresh();
+  }
+
   return (
     <div className="space-y-3 rounded-xl border border-border bg-card px-4 py-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-medium">Prévia dos pedidos da Shopee</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Puxa os pedidos dos últimos 15 dias e mostra o cálculo ao lado do que a Shopee respondeu. Não grava nada.
+            <strong>Ver prévia</strong> puxa os últimos 15 dias e mostra o cálculo ao lado da resposta crua da Shopee,
+            sem gravar nada. <strong>Importar</strong> grava os últimos 30 dias no seu painel.
           </p>
         </div>
-        <Button size="sm" variant="outline" onClick={run} disabled={loading} className="shrink-0 gap-2">
-          <Eye className="h-4 w-4" />
-          {loading ? "Consultando..." : "Ver prévia"}
-        </Button>
+        <div className="flex shrink-0 gap-2">
+          <Button size="sm" variant="outline" onClick={run} disabled={loading || syncing} className="gap-2">
+            <Eye className="h-4 w-4" />
+            {loading ? "Consultando..." : "Ver prévia"}
+          </Button>
+          <Button size="sm" onClick={importar} disabled={loading || syncing} className="gap-2">
+            <Download className="h-4 w-4" />
+            {syncing ? "Importando..." : "Importar pedidos"}
+          </Button>
+        </div>
       </div>
+
+      {sync?.error && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs">
+          {sync.error}
+          {sync.ordersWritten ? ` (${sync.ordersWritten} pedido(s) já gravados antes da falha)` : ""}
+        </p>
+      )}
+
+      {sync?.ok && (
+        <div className="space-y-1 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs">
+          <p>
+            {sync.ordersWritten} pedido(s) gravados.{" "}
+            {sync.hasMore
+              ? "Ainda há pedidos na fila — clique em Importar de novo para continuar de onde parou."
+              : "Nada mais pendente nessa janela."}
+          </p>
+          {(sync.ordersWithoutConfirmedFees ?? 0) > 0 && (
+            <p>
+              {sync.ordersWithoutConfirmedFees} deles entraram sem taxa confirmada pela Shopee e aparecem marcados —
+              o lucro desses ainda não está fechado.
+            </p>
+          )}
+        </div>
+      )}
 
       {result?.error && (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs">{result.error}</p>
