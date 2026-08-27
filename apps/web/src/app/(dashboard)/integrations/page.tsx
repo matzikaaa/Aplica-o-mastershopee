@@ -12,7 +12,7 @@ import { ShopeePreview } from "@/components/integrations/shopee-preview";
 export default async function IntegrationsPage({
   searchParams,
 }: {
-  searchParams: { error?: string; reason?: string; connected?: string; message?: string; queue?: string };
+  searchParams: { error?: string; reason?: string; connected?: string; message?: string; queue?: string; marketplace?: string };
 }) {
   const { workspace } = await requireWorkspace();
   const env = getIntegrationEnv();
@@ -43,6 +43,22 @@ export default async function IntegrationsPage({
       {searchParams.error === "not_configured" && (
         <div className="rounded-lg border border-border bg-muted px-4 py-3 text-sm text-muted-foreground">
           Esse marketplace ainda não tem credenciais de parceiro configuradas neste ambiente.
+        </div>
+      )}
+      {/* Sem estes dois, uma autorização que volta sem `state` — ou sem `code` —
+          recarrega a página sem faixa nenhuma, e o vendedor fica olhando para
+          "nenhuma conta conectada" sem nada que explique. Foi assim que um
+          state perdido no redirect passou despercebido por duas rodadas. */}
+      {searchParams.error === "invalid_callback" && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          A autorização voltou incompleta do marketplace (faltou o código ou a identificação da sessão). Tente conectar
+          de novo sem deixar a aba parada por mais de 10 minutos.
+        </div>
+      )}
+      {searchParams.error === "invalid_state" && (
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          A identificação da sessão de conexão não confere ou expirou. Comece de novo pelo botão Conectar — o link de
+          autorização vale 10 minutos.
         </div>
       )}
       {searchParams.error === "oauth_failed" && (

@@ -501,16 +501,28 @@ export class ShopeeProvider implements MarketplaceProvider {
     }
   }
 
+  /**
+   * O `state` vai dentro do próprio `redirect`, não como parâmetro solto.
+   *
+   * A Shopee não devolve parâmetros arbitrários do auth_partner: ela
+   * redireciona para a URL registrada acrescentando apenas `code` e
+   * `shop_id`. Um `state` posto ao lado de `redirect` simplesmente
+   * desaparece, e o callback recebe uma autorização válida sem saber de qual
+   * workspace ela veio — que é o que o state existe para provar.
+   */
   getAuthorizationUrl(state: string): string {
     const path = "/api/v2/shop/auth_partner";
     const timestamp = Math.floor(Date.now() / 1000);
     const sign = this.sign(path, timestamp);
+
+    const redirect = new URL(this.redirectUrl);
+    redirect.searchParams.set("state", state);
+
     const url = new URL(this.partnerHost + path);
     url.searchParams.set("partner_id", this.partnerId);
     url.searchParams.set("timestamp", String(timestamp));
     url.searchParams.set("sign", sign);
-    url.searchParams.set("redirect", this.redirectUrl);
-    url.searchParams.set("state", state);
+    url.searchParams.set("redirect", redirect.toString());
     return url.toString();
   }
 

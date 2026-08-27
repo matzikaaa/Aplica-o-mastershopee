@@ -51,3 +51,28 @@ describe("ShopeeProvider.exchangeAuthorizationCode", () => {
     ).rejects.toThrow(/error_param/);
   });
 });
+
+describe("ShopeeProvider.getAuthorizationUrl", () => {
+  it("embute o state no redirect, não ao lado dele", () => {
+    // A Shopee só acrescenta code e shop_id ao redirect registrado. Um state
+    // posto como parâmetro do auth_partner some na volta, e o callback recebe
+    // uma autorização válida sem saber de qual workspace ela veio.
+    const provider = new ShopeeProvider("2042290", KEY, "https://app.exemplo/api/integrations/shopee/callback", "live");
+    const url = new URL(provider.getAuthorizationUrl("assinado.123"));
+
+    expect(url.searchParams.get("state")).toBeNull();
+
+    const redirect = new URL(url.searchParams.get("redirect")!);
+    expect(redirect.origin + redirect.pathname).toBe("https://app.exemplo/api/integrations/shopee/callback");
+    expect(redirect.searchParams.get("state")).toBe("assinado.123");
+  });
+
+  it("assina o auth_partner com a chave configurada", () => {
+    const url = new URL(
+      new ShopeeProvider("2042290", KEY, "https://app.exemplo/cb", "live").getAuthorizationUrl("s"),
+    );
+    expect(url.host).toBe("partner.shopeemobile.com");
+    expect(url.searchParams.get("partner_id")).toBe("2042290");
+    expect(url.searchParams.get("sign")).toMatch(/^[0-9a-f]{64}$/);
+  });
+});

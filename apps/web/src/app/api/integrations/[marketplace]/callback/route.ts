@@ -3,7 +3,8 @@ import { prisma } from "@mastershopee/database";
 import { createProvider, encryptSecret, MarketplaceApiError } from "@mastershopee/integrations";
 import { getIntegrationEnv } from "@/lib/integration-env";
 import { SLUG_TO_MARKETPLACE } from "@/lib/marketplace-slug";
-import { verifyOAuthState } from "@/lib/oauth-state";
+import { cookies } from "next/headers";
+import { OAUTH_STATE_COOKIE, verifyOAuthState } from "@/lib/oauth-state";
 import { captureError } from "@/lib/observability";
 import { marketplaceSyncQueue } from "@/lib/queue";
 
@@ -12,7 +13,10 @@ export async function GET(request: Request, { params }: { params: { marketplace:
   const marketplace = SLUG_TO_MARKETPLACE[params.marketplace];
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
-  const state = url.searchParams.get("state");
+  // A Shopee acrescenta só `code` e `shop_id` ao redirect, então o state vai
+  // embutido na própria URL de redirect; o cookie cobre o caso de o
+  // marketplace descartar os parâmetros da URL registrada.
+  const state = url.searchParams.get("state") ?? cookies().get(OAUTH_STATE_COOKIE)?.value ?? null;
   // A Shopee devolve o shop_id no redirect e exige o mesmo id no corpo da
   // troca do code por token. Sem repassar daqui, a troca é recusada, nada é
   // gravado, e a tela fica dizendo "nenhuma conta conectada" depois de uma

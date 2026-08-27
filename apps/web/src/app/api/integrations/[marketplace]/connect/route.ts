@@ -4,7 +4,7 @@ import { requireWorkspace } from "@/lib/session";
 import { getPlanPermissionService } from "@/lib/billing-context";
 import { getIntegrationEnv } from "@/lib/integration-env";
 import { SLUG_TO_MARKETPLACE } from "@/lib/marketplace-slug";
-import { createOAuthState } from "@/lib/oauth-state";
+import { createOAuthState, OAUTH_STATE_COOKIE, OAUTH_STATE_COOKIE_OPTIONS } from "@/lib/oauth-state";
 
 /** Kicks off OAuth (§33 "Conectar"). Enforces plan limits *before* redirecting to the marketplace (§29). */
 export async function GET(request: Request, { params }: { params: { marketplace: string } }) {
@@ -33,5 +33,10 @@ export async function GET(request: Request, { params }: { params: { marketplace:
 
   const provider = createProvider(marketplace, env);
   const state = createOAuthState(workspace.id, params.marketplace);
-  return NextResponse.redirect(provider.getAuthorizationUrl(state));
+
+  const response = NextResponse.redirect(provider.getAuthorizationUrl(state));
+  // Reserva: se o marketplace não devolver o state na volta, o callback ainda
+  // consegue provar de qual workspace a autorização partiu.
+  response.cookies.set(OAUTH_STATE_COOKIE, state, OAUTH_STATE_COOKIE_OPTIONS);
+  return response;
 }
