@@ -35,9 +35,19 @@ function flattenNumbers(value: unknown): Record<string, number> {
 export async function POST(request: Request) {
   const { workspace } = await requireWorkspace();
 
+  // Uma tentativa de conexão que falhou deixa uma conta órfã para trás, e
+  // `findFirst` sem ordem pega qualquer uma. A que interessa é a que tem
+  // token e foi conectada por último — escolher a errada faria a importação
+  // falhar por "sem token" com a conta boa ali do lado.
   const account = await prisma.marketplaceAccount.findFirst({
-    where: { workspaceId: workspace.id, marketplace: "SHOPEE" },
+    where: {
+      workspaceId: workspace.id,
+      marketplace: "SHOPEE",
+      status: { not: "DISCONNECTED" },
+      credential: { isNot: null },
+    },
     include: { credential: true },
+    orderBy: [{ connectedAt: "desc" }, { createdAt: "desc" }],
   });
 
   // Duas falhas diferentes: nunca conectou, ou conectou e o token não ficou

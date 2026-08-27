@@ -63,29 +63,62 @@ export function ShopeePreview() {
   const [syncing, setSyncing] = useState(false);
   const [sync, setSync] = useState<SyncResult | null>(null);
 
+  /**
+   * Toda chamada passa por aqui porque o modo de falhar é o mesmo: quando a
+   * função serverless estoura o tempo, a resposta volta como HTML de erro, o
+   * `res.json()` lança, e sem `finally` o botão fica girando para sempre —
+   * escondendo justamente a falha que precisava aparecer.
+   */
+  async function chamar<T>(url: string, body: unknown): Promise<T> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 120_000);
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      const text = await res.text();
+      try {
+        return JSON.parse(text) as T;
+      } catch {
+        return {
+          error: `O servidor respondeu ${res.status} sem JSON. Costuma ser tempo esgotado na função — tente de novo, que ela continua de onde parou.`,
+        } as T;
+      }
+    } catch (err) {
+      const abortado = err instanceof DOMException && err.name === "AbortError";
+      return {
+        error: abortado
+          ? "A chamada passou de 2 minutos e foi interrompida. O que já entrou foi gravado — clique de novo para continuar."
+          : `Falha de rede: ${err instanceof Error ? err.message : "desconhecida"}`,
+      } as T;
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
   async function run() {
     setLoading(true);
     setResult(null);
-    const res = await fetch("/api/integrations/shopee/preview", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ days: 15 }),
-    });
-    setResult((await res.json()) as Preview);
-    setLoading(false);
+    try {
+      setResult(await chamar<Preview>("/api/integrations/shopee/preview", { days: 15 }));
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function importar() {
     setSyncing(true);
     setSync(null);
-    const res = await fetch("/api/integrations/shopee/sync-now", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ days: 30 }),
-    });
-    const data = (await res.json()) as SyncResult;
-    setSync(data);
-    setSyncing(false);
+    let data: SyncResult;
+    try {
+      data = await chamar<SyncResult>("/api/integrations/shopee/sync-now", { days: 30 });
+      setSync(data);
+    } finally {
+      setSyncing(false);
+    }
     // O dashboard é server-rendered: sem isto, os pedidos recém-gravados só
     // apareceriam no próximo carregamento manual.
     if (data.ok) router.refresh();

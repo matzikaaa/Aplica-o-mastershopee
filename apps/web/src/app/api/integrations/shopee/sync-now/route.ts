@@ -29,7 +29,9 @@ import { getIntegrationEnv } from "@/lib/integration-env";
 export const maxDuration = 60;
 
 /** Margem para gravar cursor e métricas depois do último lote. */
-const BUDGET_MS = 45_000;
+// Abaixo de maxDuration com folga: estourar o teto da plataforma mata a
+// função sem resposta, e aí o cursor do lote em andamento se perde.
+const BUDGET_MS = 40_000;
 
 /**
  * Fatia do orçamento reservada ao catálogo. O objetivo do vendedor é ver os
@@ -37,14 +39,24 @@ const BUDGET_MS = 45_000;
  * um catálogo grande não pode consumir a requisição inteira e deixar os
  * pedidos de fora.
  */
-const CATALOG_BUDGET_MS = 15_000;
+const CATALOG_BUDGET_MS = 12_000;
 
 export async function POST(request: Request) {
   const { workspace } = await requireWorkspace();
 
+  // Uma tentativa de conexão que falhou deixa uma conta órfã para trás, e
+  // `findFirst` sem ordem pega qualquer uma. A que interessa é a que tem
+  // token e foi conectada por último — escolher a errada faria a importação
+  // falhar por "sem token" com a conta boa ali do lado.
   const account = await prisma.marketplaceAccount.findFirst({
-    where: { workspaceId: workspace.id, marketplace: "SHOPEE" },
+    where: {
+      workspaceId: workspace.id,
+      marketplace: "SHOPEE",
+      status: { not: "DISCONNECTED" },
+      credential: { isNot: null },
+    },
     include: { credential: true },
+    orderBy: [{ connectedAt: "desc" }, { createdAt: "desc" }],
   });
   if (!account) {
     return NextResponse.json({ error: "Nenhuma conta Shopee conectada neste workspace." }, { status: 404 });

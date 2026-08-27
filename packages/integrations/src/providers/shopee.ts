@@ -690,8 +690,23 @@ export class ShopeeProvider implements MarketplaceProvider {
     });
 
     const items: NormalizedProduct[] = [];
+    const baseItems = base.item_list ?? [];
 
-    for (const item of base.item_list ?? []) {
+    // Uma chamada de variações por anúncio, pelo mesmo motivo do escrow.
+    const modelLists = await ShopeeProvider.mapLimited(baseItems, 5, async (item) => {
+      if (!item.has_model) return null;
+      try {
+        return await this.shopRequest<{
+          model: { model_id: number; model_name?: string; model_sku?: string }[];
+        }>("/api/v2/product/get_model_list", credentials, { item_id: String(item.item_id) });
+      } catch {
+        // Perder as variações de um anúncio não justifica derrubar a página
+        // inteira; o anúncio entra sem variação.
+        return null;
+      }
+    });
+
+    for (const [index, item] of baseItems.entries()) {
       const imageUrl = item.image?.image_url_list?.[0];
       const title = item.item_name ?? `Shopee item ${item.item_id}`;
 
@@ -709,30 +724,26 @@ export class ShopeeProvider implements MarketplaceProvider {
       // Quem vende variação cadastra custo por variação, e os pedidos vêm com
       // `model_sku`. Um produto por anúncio, aqui, deixaria todo pedido de
       // variação sem custo.
-      try {
-        const models = await this.shopRequest<{
-          model: { model_id: number; model_name?: string; model_sku?: string }[];
-        }>("/api/v2/product/get_model_list", credentials, { item_id: String(item.item_id) });
-
-        for (const model of models.model ?? []) {
-          items.push({
-            externalProductId: String(item.item_id),
-            externalVariationId: String(model.model_id),
-            sku: model.model_sku?.trim() || item.item_sku?.trim() || String(model.model_id),
-            title: model.model_name ? `${title} — ${model.model_name}` : title,
-            imageUrl,
-            raw: { item, model },
-          });
-        }
-      } catch {
-        // Perder as variações de um anúncio não justifica derrubar a página
-        // inteira; o anúncio entra sem variação e o log do sync registra.
+      const models = modelLists[index]?.model ?? [];
+      if (models.length === 0) {
         items.push({
           externalProductId: String(item.item_id),
           sku: item.item_sku?.trim() || String(item.item_id),
           title,
           imageUrl,
           raw: item,
+        });
+        continue;
+      }
+
+      for (const model of models) {
+        items.push({
+          externalProductId: String(item.item_id),
+          externalVariationId: String(model.model_id),
+          sku: model.model_sku?.trim() || item.item_sku?.trim() || String(model.model_id),
+          title: model.model_name ? `${title} — ${model.model_name}` : title,
+          imageUrl,
+          raw: { item, model },
         });
       }
     }
@@ -742,6 +753,32 @@ export class ShopeeProvider implements MarketplaceProvider {
       nextCursor: { value: String(list.next_offset ?? 0) },
       hasMore: Boolean(list.has_next_page),
     };
+  }
+
+  /**
+   * Executa em paralelo com teto. O escrow é uma chamada por pedido e não há
+   * endpoint em lote: 50 pedidos em série são 50 idas e voltas enfileiradas,
+   * o suficiente para estourar o tempo de uma função serverless antes de
+   * gravar qualquer coisa. Sem teto seria o contrário — 50 chamadas de uma
+   * vez derrubariam o limite de taxa da Shopee.
+   */
+  private static async mapLimited<In, Out>(
+    items: In[],
+    limit: number,
+    fn: (item: In) => Promise<Out>,
+  ): Promise<Out[]> {
+    const out = new Array<Out>(items.length);
+    let next = 0;
+
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+      while (next < items.length) {
+        const index = next++;
+        out[index] = await fn(items[index]!);
+      }
+    });
+
+    await Promise.all(workers);
+    return out;
   }
 
   /** Janela máxima documentada de consulta de pedidos: 15 dias por chamada. */
@@ -799,10 +836,11 @@ export class ShopeeProvider implements MarketplaceProvider {
       },
     );
 
-    const items: NormalizedOrder[] = [];
-    for (const order of detail.order_list ?? []) {
-      items.push(normalizeShopeeOrder(order, await this.fetchEscrow(credentials, order.order_sn)));
-    }
+    const orders = detail.order_list ?? [];
+    const escrows = await ShopeeProvider.mapLimited(orders, 5, (order) =>
+      this.fetchEscrow(credentials, order.order_sn),
+    );
+    const items = orders.map((order, i) => normalizeShopeeOrder(order, escrows[i] ?? null));
 
     return { items, ...advance() };
   }
