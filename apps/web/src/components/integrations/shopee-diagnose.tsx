@@ -6,13 +6,32 @@ import { Button } from "@/components/ui/button";
 
 type KeyEncoding = "raw" | "stripped" | "hex-decoded";
 
+type SignVerdict = "accepted" | "refused" | "inconclusive";
+
 interface SignAttempt {
   encoding: KeyEncoding;
   environment: "test" | "live";
   keyByteLength: number;
-  signAccepted: boolean;
+  signVerdict: SignVerdict;
   shopeeError: string | null;
 }
+
+/**
+ * Três símbolos, não dois. `invalid_partner_id` não é assinatura recusada
+ * nem aceita: a Shopee não chegou a conferi-la. Mostrar isso como ✓ já
+ * inverteu uma conclusão.
+ */
+const VERDICT_MARK: Record<SignVerdict, string> = {
+  accepted: "✓",
+  refused: "✗",
+  inconclusive: "—",
+};
+
+const VERDICT_LABEL: Record<SignVerdict, string> = {
+  accepted: "assinatura aceita",
+  refused: "assinatura recusada",
+  inconclusive: "não conclui nada sobre a assinatura",
+};
 
 interface Diagnosis {
   ok: boolean;
@@ -113,13 +132,13 @@ export function ShopeeDiagnose() {
               <p className="font-medium">Assinaturas testadas contra a Shopee</p>
               {result.signAttempts.map((a) => (
                 <p key={`${a.environment}-${a.encoding}`} className="flex items-center gap-2">
-                  <span aria-hidden>{a.signAccepted ? "✓" : "✗"}</span>
+                  <span aria-hidden>{VERDICT_MARK[a.signVerdict]}</span>
                   <span className="font-mono text-[11px]">
                     {a.environment}/{a.encoding}
                   </span>
                   <span className="text-muted-foreground">
-                    {ENCODING_LABEL[a.encoding] ?? a.encoding} · {a.keyByteLength} bytes ·{" "}
-                    {a.signAccepted ? "assinatura aceita" : (a.shopeeError ?? "recusada")}
+                    {a.keyByteLength} bytes · {VERDICT_LABEL[a.signVerdict]}
+                    {a.shopeeError ? ` · ${a.shopeeError}` : ""}
                   </span>
                 </p>
               ))}

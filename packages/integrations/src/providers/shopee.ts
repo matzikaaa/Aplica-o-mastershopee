@@ -42,14 +42,41 @@ import {
  */
 
 /** One reading of the partner key, and what Shopee said about it. */
+/**
+ * O que a resposta da Shopee diz sobre a assinatura — que não é a mesma
+ * pergunta que "deu erro?".
+ *
+ * `invalid_partner_id`, `error_param` e `error_not_found` são recusados
+ * *antes* de a assinatura ser conferida: a Shopee não achou o parceiro, ou a
+ * chamada nem chegou ao endpoint. Tratar isso como "assinatura aceita"
+ * inverte a conclusão de uma sondagem cruzada de ambiente — é exatamente a
+ * resposta esperada ao perguntar ao host do ambiente errado.
+ */
+export type ShopeeSignVerdict = "accepted" | "refused" | "inconclusive";
+
+function signVerdictFor(errorCode: string | null): ShopeeSignVerdict {
+  if (!errorCode) return "accepted";
+  switch (errorCode) {
+    case "error_sign":
+      return "refused";
+    case "invalid_partner_id":
+    case "error_param":
+    case "error_not_found":
+      return "inconclusive";
+    default:
+      // Permissão, cota, loja não autorizada: a Shopee só chega nesses
+      // depois de validar a assinatura.
+      return "accepted";
+  }
+}
+
 export interface ShopeeSignAttempt {
   encoding: ShopeeKeyEncoding;
   /** Which host this reading was tried against. */
   environment: "test" | "live";
   /** Byte length of the derived key — never the key itself. */
   keyByteLength: number;
-  /** True when Shopee did *not* answer `error_sign`. */
-  signAccepted: boolean;
+  signVerdict: ShopeeSignVerdict;
   shopeeError: string | null;
 }
 
@@ -257,7 +284,10 @@ export class ShopeeProvider implements MarketplaceProvider {
         clockSkewSeconds ??= result.clockSkewSeconds;
         reachedShopee ||= result.reachedShopee;
 
-        if (!result.attempt.signAccepted) {
+        // Só um veredito "accepted" conclui a sondagem. Um inconclusivo não
+        // diz nada sobre a chave e seguir nele já produziu uma conclusão
+        // invertida uma vez.
+        if (result.attempt.signVerdict !== "accepted") {
           if (environment === configuredEnvironment) lastFailure = result.diagnosis;
           continue;
         }
@@ -318,10 +348,30 @@ export class ShopeeProvider implements MarketplaceProvider {
     attempts: ShopeeSignAttempt[],
     clockSkewSeconds: number | null,
   ): string[] {
-    const environments = [...new Set(attempts.map((a) => a.environment))];
-    const out = [
-      `Assinatura recusada em ${attempts.length} tentativas — todas as leituras da chave, nos ambientes ${environments.join(" e ")}. Isso descarta a codificação da chave e o ambiente trocado.`,
-    ];
+    const here = attempts.filter((a) => a.environment === base.environment);
+    const there = attempts.filter((a) => a.environment !== base.environment);
+    const otherEnvironment = base.environment === "live" ? "test" : "live";
+
+    const out: string[] = [];
+
+    // `error_sign` no host configurado é, por si só, uma informação boa: a
+    // Shopee só chega a conferir a assinatura depois de encontrar o parceiro.
+    const refusedHere = here.some((a) => a.signVerdict === "refused");
+    const unknownThere = there.some((a) => (a.shopeeError ?? "").startsWith("invalid_partner_id"));
+
+    if (refusedHere && unknownThere) {
+      out.push(
+        `O partner_id está certo e é do ambiente ${base.environment}: lá a Shopee responde error_sign, que só acontece depois de encontrar o parceiro, e no host de ${otherEnvironment} ela responde invalid_partner_id. Não mexa em SHOPEE_ENV — o que não bate é a chave.`,
+      );
+    } else if (refusedHere) {
+      out.push(
+        `A Shopee reconhece este partner_id no ambiente ${base.environment} — error_sign só aparece depois de encontrar o parceiro — mas recusa a assinatura em todas as leituras da chave.`,
+      );
+    } else {
+      out.push(
+        `Assinatura recusada em ${attempts.length} tentativas, em ${base.environment} e ${otherEnvironment}. Isso descarta a codificação da chave e o ambiente trocado.`,
+      );
+    }
 
     if (clockSkewSeconds === null) {
       out.push("Não deu para medir o relógio (a Shopee não devolveu o cabeçalho Date). Confira se o horário do servidor está certo.");
@@ -339,7 +389,7 @@ export class ShopeeProvider implements MarketplaceProvider {
     }
 
     out.push(
-      "Sobram duas causas, e as duas se resolvem no console da Shopee: (1) o partner_key não é o deste partner_id — as linhas de Test e de Live são parecidas e a chave pode ter sido regerada desde que você copiou; confira o começo da chave contra a impressão digital acima e copie de novo; (2) o app exige allowlist de IP e o IP de saída não está liberado. A Vercel não dá IP fixo no plano padrão.",
+      "Sobram duas causas, as duas do lado do console da Shopee: (1) o partner_key configurado não é o que pertence a este partner_id — copiado da linha errada ou regerado no console depois da cópia; compare a impressão digital acima com o começo da chave na tela do console e copie de novo; (2) o app exige allowlist de IP e o IP de saída não está liberado. A Vercel não dá IP fixo no plano padrão.",
     );
     return out;
   }
@@ -395,7 +445,7 @@ export class ShopeeProvider implements MarketplaceProvider {
           // Resposta ilegível não diz nada sobre a assinatura; tratar como
           // recusa faz a sondagem seguir para as outras leituras, que é o
           // comportamento certo aqui.
-          attempt: { ...attemptBase, signAccepted: false, shopeeError: raw.slice(0, 120) },
+          attempt: { ...attemptBase, signVerdict: "inconclusive", shopeeError: raw.slice(0, 120) },
           clockSkewSeconds,
           reachedShopee: true,
         };
@@ -411,7 +461,7 @@ export class ShopeeProvider implements MarketplaceProvider {
             shopeeError,
             shopCount: null,
           },
-          attempt: { ...attemptBase, signAccepted: data.error !== "error_sign", shopeeError },
+          attempt: { ...attemptBase, signVerdict: signVerdictFor(data.error), shopeeError },
           clockSkewSeconds,
           reachedShopee: true,
         };
@@ -425,7 +475,7 @@ export class ShopeeProvider implements MarketplaceProvider {
           shopeeError: null,
           shopCount: data.response?.authed_shop_list?.length ?? 0,
         },
-        attempt: { ...attemptBase, signAccepted: true, shopeeError: null },
+        attempt: { ...attemptBase, signVerdict: "accepted", shopeeError: null },
         clockSkewSeconds,
         reachedShopee: true,
       };
@@ -439,7 +489,7 @@ export class ShopeeProvider implements MarketplaceProvider {
           shopeeError: null,
           shopCount: null,
         },
-        attempt: { ...attemptBase, signAccepted: false, shopeeError: message },
+        attempt: { ...attemptBase, signVerdict: "inconclusive", shopeeError: message },
         clockSkewSeconds: null,
         reachedShopee: false,
       };

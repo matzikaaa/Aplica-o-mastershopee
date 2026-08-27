@@ -75,10 +75,10 @@ describe("ShopeeProvider.diagnose — descobrir a leitura da chave perguntando �
     // Não é "ok": a aplicação ainda assina com a leitura errada em produção.
     expect(d.ok).toBe(false);
     expect(spy).toHaveBeenCalledTimes(3);
-    expect(d.signAttempts.map((a) => [a.encoding, a.signAccepted])).toEqual([
-      ["raw", false],
-      ["stripped", false],
-      ["hex-decoded", true],
+    expect(d.signAttempts.map((a) => [a.encoding, a.signVerdict])).toEqual([
+      ["raw", "refused"],
+      ["stripped", "refused"],
+      ["hex-decoded", "accepted"],
     ]);
   });
 
@@ -112,10 +112,42 @@ describe("ShopeeProvider.diagnose — descobrir a leitura da chave perguntando �
     // Três leituras × dois ambientes: nada de ambiente trocado sobra como
     // palpite depois disso.
     expect(d.signAttempts).toHaveLength(6);
-    expect(d.signAttempts.every((a) => !a.signAccepted)).toBe(true);
-    expect(d.problems[0]).toContain("descarta");
+    expect(d.signAttempts.every((a) => a.signVerdict === "refused")).toBe(true);
+    expect(d.problems[0]).toContain("reconhece este partner_id");
     expect(d.problems.join(" ")).toContain("Relógio conferido");
     expect(d.problems.join(" ")).toContain("allowlist de IP");
+  });
+
+  it("não confunde invalid_partner_id com assinatura aceita — foi o que inverteu a conclusão uma vez", async () => {
+    // O caso real: Live devolve error_sign (achou o parceiro, recusou a
+    // assinatura) e test devolve invalid_partner_id (nem procurou a
+    // assinatura). Concluir "credenciais são de test" daqui está de cabeça
+    // para baixo.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const live = new URL(url).host === "partner.shopeemobile.com";
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ date: new Date().toUTCString() }),
+          text: async () =>
+            JSON.stringify(
+              live
+                ? { error: "error_sign", message: "Wrong sign." }
+                : { error: "invalid_partner_id", message: "Invalid partner_id, please have a check." },
+            ),
+        };
+      }),
+    );
+    const d = await new ShopeeProvider("2042290", DISPLAYED_KEY, "https://x/cb", "live", "raw").diagnose();
+
+    expect(d.ok).toBe(false);
+    expect(d.acceptedEnvironment).toBeNull();
+    expect(d.signAttempts.filter((a) => a.environment === "test").every((a) => a.signVerdict === "inconclusive")).toBe(true);
+    expect(d.problems[0]).toContain("O partner_id está certo e é do ambiente live");
+    expect(d.problems[0]).toContain("Não mexa em SHOPEE_ENV");
+    expect(d.problems.join(" ")).toContain("impressão digital");
   });
 
   it("aponta o ambiente trocado quando o outro host aceita a mesma chave", async () => {

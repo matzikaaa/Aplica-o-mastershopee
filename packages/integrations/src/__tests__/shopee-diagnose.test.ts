@@ -64,7 +64,7 @@ describe("ShopeeProvider.diagnose — achar a causa sem gastar um redirect", () 
     expect(d.shopeeError).toBe("error_sign — wrong sign");
     // Sondou os dois ambientes, então "ambiente trocado" deixa de ser palpite.
     expect(new Set(d.signAttempts.map((a) => a.environment))).toEqual(new Set(["live", "test"]));
-    expect(d.problems[0]).toContain("descarta");
+    expect(d.problems[0]).toContain("reconhece este partner_id");
     expect(d.problems.join(" ")).toContain("allowlist de IP");
   });
 

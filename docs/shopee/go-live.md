@@ -161,9 +161,19 @@ restantes em vez de listá-las:
 
 - **Ambiente trocado** — as chaves de Test e de Live têm o mesmo tamanho e o
   mesmo prefixo, então colar uma no lugar da outra é invisível de fora. O
-  diagnóstico repete as três leituras contra o host do **outro** ambiente; se
-  alguma passar lá, ele diz qual `SHOPEE_ENV` usar. Descartado quando as seis
-  tentativas falham.
+  diagnóstico repete as três leituras contra o host do **outro** ambiente.
+
+  Aqui vale saber ler o resultado, porque nem todo erro fala sobre a
+  assinatura. `invalid_partner_id`, `error_param` e `error_not_found` são
+  recusados **antes** de a assinatura ser conferida — a Shopee não achou o
+  parceiro, ou a chamada nem chegou ao endpoint. Por isso o painel mostra três
+  vereditos, não dois: `✓` aceita, `✗` recusada, `—` não conclui nada.
+
+  A combinação que apareceu nas credenciais Live é informativa por si só:
+  `error_sign` no host de live e `invalid_partner_id` no de test significa que
+  **o partner_id está certo e é do Live** (o `error_sign` só acontece depois de
+  a Shopee encontrar o parceiro) e que o problema está na chave. Nesse caso
+  não se mexe em `SHOPEE_ENV`.
 - **Relógio** — a assinatura inclui o timestamp e a Shopee recusa fora de ~5
   minutos. O diagnóstico compara o relógio do servidor com o cabeçalho `Date`
   da resposta da Shopee e reporta a diferença em segundos. Vira medição, não
