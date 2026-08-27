@@ -66,3 +66,28 @@ export function resolveShopeeKey(partnerKey: string, encoding: ShopeeKeyEncoding
 export function shopeeSign(key: Buffer, base: string): string {
   return createHmac("sha256", key).update(base).digest("hex");
 }
+
+/**
+ * O formato que o console da Shopee imprime: `shpk` + 60 hexadecimais.
+ * Um valor com 64 caracteres que **não** casa com isso é sinal de paste
+ * corrompido — quebra de linha no meio, caractere invisível, um pedaço de
+ * outra credencial. O tamanho sozinho não pega esse caso.
+ */
+export function isShopeeKeyFormat(partnerKey: string): boolean {
+  return /^shpk[0-9a-f]{60}$/i.test(partnerKey.trim());
+}
+
+/**
+ * Identifica *qual* chave está configurada sem revelá-la.
+ *
+ * A chave de Test e a de Live têm o mesmo tamanho e o mesmo prefixo, então
+ * "64 caracteres" não distingue as duas — e colar a de Test no lugar da de
+ * Live dá exatamente `error_sign`. Os 4 hexadecimais depois do `shpk` já
+ * separam as duas na tela do console, e 8 dos 240 bits não tornam a chave
+ * adivinhável.
+ */
+export function shopeeKeyFingerprint(partnerKey: string): string {
+  const trimmed = partnerKey.trim();
+  if (trimmed.length < 16) return "(curta demais para identificar)";
+  return `${trimmed.slice(0, 8)}…${trimmed.slice(-4)}`;
+}

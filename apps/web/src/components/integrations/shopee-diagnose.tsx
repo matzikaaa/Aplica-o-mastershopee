@@ -8,6 +8,7 @@ type KeyEncoding = "raw" | "stripped" | "hex-decoded";
 
 interface SignAttempt {
   encoding: KeyEncoding;
+  environment: "test" | "live";
   keyByteLength: number;
   signAccepted: boolean;
   shopeeError: string | null;
@@ -21,7 +22,11 @@ interface Diagnosis {
   partnerIdLength: number;
   partnerKeyLength: number;
   keyEncoding: KeyEncoding;
+  keyFingerprint: string;
+  keyFormatOk: boolean;
+  clockSkewSeconds: number | null;
   acceptedKeyEncoding: KeyEncoding | null;
+  acceptedEnvironment: "test" | "live" | null;
   signAttempts: SignAttempt[];
   problems: string[];
   shopeeError: string | null;
@@ -93,15 +98,25 @@ export function ShopeeDiagnose() {
             <span>
               Leitura da chave: <strong>{ENCODING_LABEL[result.keyEncoding] ?? result.keyEncoding}</strong>
             </span>
+            <span>
+              Chave configurada: <strong className="font-mono">{result.keyFingerprint}</strong>
+            </span>
+            {result.clockSkewSeconds !== null && (
+              <span>
+                Relógio vs. Shopee: <strong>{Math.round(result.clockSkewSeconds)}s</strong>
+              </span>
+            )}
           </div>
 
           {result.signAttempts.length > 1 && (
             <div className="space-y-1 rounded-lg bg-muted/40 px-3 py-2">
-              <p className="font-medium">Leituras da chave testadas contra a Shopee</p>
+              <p className="font-medium">Assinaturas testadas contra a Shopee</p>
               {result.signAttempts.map((a) => (
-                <p key={a.encoding} className="flex items-center gap-2">
+                <p key={`${a.environment}-${a.encoding}`} className="flex items-center gap-2">
                   <span aria-hidden>{a.signAccepted ? "✓" : "✗"}</span>
-                  <span className="font-mono text-[11px]">{a.encoding}</span>
+                  <span className="font-mono text-[11px]">
+                    {a.environment}/{a.encoding}
+                  </span>
                   <span className="text-muted-foreground">
                     {ENCODING_LABEL[a.encoding] ?? a.encoding} · {a.keyByteLength} bytes ·{" "}
                     {a.signAccepted ? "assinatura aceita" : (a.shopeeError ?? "recusada")}
@@ -124,6 +139,11 @@ export function ShopeeDiagnose() {
               ))}
               {result.shopeeError && (
                 <p className="font-mono text-[11px] opacity-80">Resposta da Shopee: {result.shopeeError}</p>
+              )}
+              {result.acceptedEnvironment && result.acceptedEnvironment !== result.environment && (
+                <p className="rounded bg-background/60 px-2 py-1 font-mono text-[11px]">
+                  SHOPEE_ENV={result.acceptedEnvironment}
+                </p>
               )}
               {result.acceptedKeyEncoding && result.acceptedKeyEncoding !== result.keyEncoding && (
                 <p className="rounded bg-background/60 px-2 py-1 font-mono text-[11px]">

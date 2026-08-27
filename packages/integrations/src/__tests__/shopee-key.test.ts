@@ -42,9 +42,12 @@ describe("shopeeKeyCandidates", () => {
  * base string com a chave esperada e compara. Qualquer outra leitura recebe
  * `error_sign`, exatamente como o servidor real responde.
  */
-function fakeShopeeAccepting(expectedKey: Buffer) {
+function fakeShopeeAccepting(expectedKey: Buffer, onlyHost?: string) {
   const spy = vi.fn(async (url: string) => {
     const parsed = new URL(url);
+    if (onlyHost && parsed.host !== onlyHost) {
+      return { ok: true, status: 200, headers: new Headers(), text: async () => JSON.stringify({ error: "error_sign", message: "Wrong sign." }) };
+    }
     const partnerId = parsed.searchParams.get("partner_id")!;
     const timestamp = parsed.searchParams.get("timestamp")!;
     const expected = createHmac("sha256", expectedKey)
@@ -56,7 +59,7 @@ function fakeShopeeAccepting(expectedKey: Buffer) {
         ? { response: { authed_shop_list: [] } }
         : { error: "error_sign", message: "Wrong sign." };
 
-    return { ok: true, status: 200, text: async () => JSON.stringify(body) };
+    return { ok: true, status: 200, headers: new Headers({ date: new Date().toUTCString() }), text: async () => JSON.stringify(body) };
   });
   vi.stubGlobal("fetch", spy);
   return spy;
@@ -106,16 +109,51 @@ describe("ShopeeProvider.diagnose — descobrir a leitura da chave perguntando �
 
     expect(d.ok).toBe(false);
     expect(d.acceptedKeyEncoding).toBeNull();
-    expect(d.signAttempts).toHaveLength(3);
+    // Três leituras × dois ambientes: nada de ambiente trocado sobra como
+    // palpite depois disso.
+    expect(d.signAttempts).toHaveLength(6);
     expect(d.signAttempts.every((a) => !a.signAccepted)).toBe(true);
-    expect(d.problems[0]).toContain("ambiente");
-    expect(d.problems[0]).toContain("relógio");
+    expect(d.problems[0]).toContain("descarta");
+    expect(d.problems.join(" ")).toContain("Relógio conferido");
+    expect(d.problems.join(" ")).toContain("allowlist de IP");
+  });
+
+  it("aponta o ambiente trocado quando o outro host aceita a mesma chave", async () => {
+    // Credenciais de teste configuradas como Live: mesmo tamanho, mesmo
+    // prefixo, indistinguíveis daqui — mas a Shopee sabe.
+    fakeShopeeAccepting(Buffer.from(DISPLAYED_KEY, "utf8"), "partner.test-stable.shopeemobile.com");
+    const d = await new ShopeeProvider("1241533", DISPLAYED_KEY, "https://x/cb", "live", "raw").diagnose();
+
+    expect(d.ok).toBe(false);
+    expect(d.acceptedEnvironment).toBe("test");
+    expect(d.problems[0]).toContain("SHOPEE_ENV=test");
+  });
+
+  it("mede a diferença de relógio contra a Shopee em vez de deixar como suspeita", async () => {
+    const skew = 900;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        headers: new Headers({ date: new Date(Date.now() - skew * 1000).toUTCString() }),
+        text: async () => JSON.stringify({ error: "error_sign", message: "Wrong sign." }),
+      })),
+    );
+    const d = await new ShopeeProvider("2042290", DISPLAYED_KEY, "https://x/cb", "live", "raw").diagnose();
+
+    expect(d.clockSkewSeconds).toBeGreaterThan(800);
+    expect(d.problems.join(" ")).toContain("fora do horário da Shopee");
+    // Com o relógio identificado como causa, não faz sentido mandar conferir
+    // a chave e o console também.
+    expect(d.problems.join(" ")).not.toContain("allowlist de IP");
   });
 
   it("para de sondar quando a assinatura passa e o erro é outro", async () => {
     const spy = vi.fn(async () => ({
       ok: true,
       status: 200,
+      headers: new Headers({ date: new Date().toUTCString() }),
       text: async () => JSON.stringify({ error: "error_permission", message: "no access" }),
     }));
     vi.stubGlobal("fetch", spy);
@@ -133,6 +171,8 @@ describe("ShopeeProvider.diagnose — descobrir a leitura da chave perguntando �
 
     expect(serialized).not.toContain(ASCII_KEY);
     expect(serialized).not.toContain(DISPLAYED_KEY);
+    expect(serialized).not.toContain(DISPLAYED_KEY.slice(4));
     expect(d.signAttempts.map((a) => a.keyByteLength)).toEqual([64, 60, 30]);
+    expect(d.keyFingerprint).toBe(`${DISPLAYED_KEY.slice(0, 8)}…${DISPLAYED_KEY.slice(-4)}`);
   });
 });

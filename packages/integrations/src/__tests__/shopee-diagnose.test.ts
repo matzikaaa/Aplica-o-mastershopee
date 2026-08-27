@@ -13,7 +13,10 @@ function mockFetch(body: unknown, status = 200) {
   return spy;
 }
 
-const KEY = "a".repeat(64);
+// Formato real do console: `shpk` + 60 hexadecimais. Um valor fora desse
+// formato é recusado antes de qualquer chamada, então o fixture precisa ser
+// bem formado para os testes exercitarem a sondagem de verdade.
+const KEY = `shpk${"a".repeat(60)}`;
 
 describe("ShopeeProvider.diagnose — achar a causa sem gastar um redirect", () => {
   it("aponta credencial faltando antes de chamar a Shopee", async () => {
@@ -35,6 +38,15 @@ describe("ShopeeProvider.diagnose — achar a causa sem gastar um redirect", () 
     expect(d.problems.some((p) => p.includes("só dígitos"))).toBe(true);
   });
 
+  it("pega chave fora do formato do console antes de gastar uma chamada", async () => {
+    const spy = mockFetch({});
+    const d = await new ShopeeProvider("123456", "a".repeat(64), "https://x/cb", "live").diagnose();
+
+    expect(d.keyFormatOk).toBe(false);
+    expect(d.problems.some((p) => p.includes("formato"))).toBe(true);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it("usa o host de teste quando o ambiente é test", async () => {
     const spy = mockFetch({ response: { authed_shop_list: [] } });
     const d = await new ShopeeProvider("123456", KEY, "https://x/cb", "test").diagnose();
@@ -44,14 +56,16 @@ describe("ShopeeProvider.diagnose — achar a causa sem gastar um redirect", () 
     expect(d.ok).toBe(true);
   });
 
-  it("traduz error_sign apontando o ambiente oposto, sem esconder o código", async () => {
+  it("quando error_sign resiste a tudo, relata o que foi eliminado — não repete a suspeita", async () => {
     mockFetch({ error: "error_sign", message: "wrong sign" });
     const d = await new ShopeeProvider("123456", KEY, "https://x/cb", "live").diagnose();
 
     expect(d.ok).toBe(false);
     expect(d.shopeeError).toBe("error_sign — wrong sign");
-    expect(d.problems[0]).toContain("test");
-    expect(d.problems[0]).toContain("relógio");
+    // Sondou os dois ambientes, então "ambiente trocado" deixa de ser palpite.
+    expect(new Set(d.signAttempts.map((a) => a.environment))).toEqual(new Set(["live", "test"]));
+    expect(d.problems[0]).toContain("descarta");
+    expect(d.problems.join(" ")).toContain("allowlist de IP");
   });
 
   it("traduz invalid_partner_id da mesma forma", async () => {
@@ -60,7 +74,7 @@ describe("ShopeeProvider.diagnose — achar a causa sem gastar um redirect", () 
     expect(d.problems[0]).toContain("live");
   });
 
-  it("nunca devolve as credenciais, só o tamanho delas", async () => {
+  it("nunca devolve as credenciais, só tamanho e impressão digital", async () => {
     mockFetch({ response: { authed_shop_list: [] } });
     const d = await new ShopeeProvider("123456", KEY, "https://x/cb", "live").diagnose();
     const serialized = JSON.stringify(d);
@@ -68,6 +82,8 @@ describe("ShopeeProvider.diagnose — achar a causa sem gastar um redirect", () 
     expect(serialized).not.toContain(KEY);
     expect(d.partnerKeyLength).toBe(64);
     expect(d.partnerIdLength).toBe(6);
+    // Só o suficiente para distinguir a chave de Test da de Live.
+    expect(d.keyFingerprint).toBe(`${KEY.slice(0, 8)}…${KEY.slice(-4)}`);
   });
 
   it("sobrevive a uma resposta que não é JSON", async () => {
@@ -84,6 +100,9 @@ describe("ShopeeProvider.diagnose — achar a causa sem gastar um redirect", () 
     const d = await new ShopeeProvider("123456", KEY, "https://x/cb", "live").diagnose();
 
     expect(d.ok).toBe(false);
+    // Rede caída não é assinatura recusada: nada foi eliminado, e o relatório
+    // não pode fingir que foi.
     expect(d.problems[0]).toContain("ENOTFOUND");
+    expect(d.problems[0]).not.toContain("descarta");
   });
 });

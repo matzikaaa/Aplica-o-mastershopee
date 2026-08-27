@@ -153,15 +153,34 @@ certo com o sync quebrado seria mentira.
 
 O relatório informa só o tamanho em bytes de cada leitura, nunca a chave.
 
-Se **nenhuma** leitura passar, a codificação não é o problema. Sobram:
+### Quando nenhuma leitura passa
 
-1. **Credenciais do ambiente trocado** — partner_key de Test contra host Live,
-   ou o contrário. O diagnóstico aponta isso explicitamente.
-2. **Chave colada incompleta** — o partner_key é longo e a caixa do console
-   corta visualmente. O diagnóstico mostra o tamanho para conferir.
-3. **Relógio fora do horário** — a assinatura inclui o timestamp e a Shopee
-   recusa fora de ~5 minutos. Sincronize o relógio do Windows.
-4. **IP não liberado** — o console tem allowlist de IP por app. A Vercel não
+Foi o que aconteceu com as credenciais Live: as três leituras recusadas. Aí a
+codificação está descartada, e o diagnóstico passa a **medir** as suspeitas
+restantes em vez de listá-las:
+
+- **Ambiente trocado** — as chaves de Test e de Live têm o mesmo tamanho e o
+  mesmo prefixo, então colar uma no lugar da outra é invisível de fora. O
+  diagnóstico repete as três leituras contra o host do **outro** ambiente; se
+  alguma passar lá, ele diz qual `SHOPEE_ENV` usar. Descartado quando as seis
+  tentativas falham.
+- **Relógio** — a assinatura inclui o timestamp e a Shopee recusa fora de ~5
+  minutos. O diagnóstico compara o relógio do servidor com o cabeçalho `Date`
+  da resposta da Shopee e reporta a diferença em segundos. Vira medição, não
+  suspeita.
+- **Paste corrompido** — além do tamanho, o valor tem que casar com
+  `shpk` + 60 hexadecimais. Uma quebra de linha ou caractere invisível no meio
+  mantém o tamanho e quebra o formato; isso é checado antes de qualquer
+  chamada.
+
+Descartados esses, sobram duas causas, as duas do lado do console da Shopee:
+
+1. **A chave não é a deste partner_id** — copiada da linha errada, ou regerada
+   no console depois que você copiou. O diagnóstico mostra uma **impressão
+   digital** da chave configurada (`shpk4b41…7c2e`: os primeiros 8 e os últimos
+   4 caracteres) justamente para comparar com o que está na tela do console sem
+   expor a chave. Se não bater, copie de novo.
+2. **IP não liberado** — o console tem allowlist de IP por app. A Vercel não
    dá IP fixo no plano padrão; se a Shopee exigir, é preciso sair por um IP
    estático (o worker no Railway, ou um proxy).
 
