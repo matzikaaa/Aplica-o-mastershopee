@@ -1,5 +1,6 @@
 import Decimal from "decimal.js";
 import { prisma } from "./index";
+import { ensureProductForOrderItem } from "./product-upsert";
 import { applySaleToStock, reverseSaleFromStock } from "./stock";
 
 /**
@@ -105,9 +106,12 @@ export async function upsertNormalizedOrder(
   });
 
   for (const item of o.items) {
-    const product = await prisma.product.findUnique({
-      where: { workspaceId_sku: { workspaceId: account.workspaceId, sku: item.externalSku } },
-    });
+    // Todo SKU vendido vira produto. Sem isto, um SKU que não está no
+    // catálogo sincronizado some: o pedido entra sem produto, sem custo, e
+    // sem aparecer em lugar nenhum para o vendedor perceber que falta
+    // preencher. O produto nasce sem custo, marcado como tal no painel.
+    const productId = await ensureProductForOrderItem(account.workspaceId, item.externalSku, item.title);
+    const product = productId ? { id: productId } : null;
     const unitCostSnapshot = product ? await resolveCostSnapshot(product.id, o.orderedAt) : new Decimal(0);
 
     const orderItemId = `${order.id}:${item.externalSku}:${item.externalVariationId ?? ""}`;

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { prisma, upsertNormalizedOrder } from "@mastershopee/database";
+import { prisma, upsertMarketplaceProduct, upsertNormalizedOrder } from "@mastershopee/database";
 import {
   createProvider,
   decryptSecret,
@@ -92,27 +92,12 @@ export async function runMarketplaceSync(data: MarketplaceSyncJobData): Promise<
       await limiter.acquire(account.id);
       const page = await provider.fetchProducts(credentials, productCursor);
       for (const p of page.items) {
-        const product = await prisma.product.upsert({
-          where: { workspaceId_sku: { workspaceId: account.workspaceId, sku: p.sku } },
-          update: { name: p.title, imageUrl: p.imageUrl },
-          create: { workspaceId: account.workspaceId, sku: p.sku, name: p.title, imageUrl: p.imageUrl },
-        });
-        await prisma.marketplaceProduct.upsert({
-          where: {
-            marketplaceAccountId_externalProductId_externalVariationId: {
-              marketplaceAccountId: account.id,
-              externalProductId: p.externalProductId,
-              externalVariationId: p.externalVariationId ?? "",
-            },
-          },
-          update: { title: p.title },
-          create: {
-            productId: product.id,
-            marketplaceAccountId: account.id,
-            externalProductId: p.externalProductId,
-            externalVariationId: p.externalVariationId ?? "",
-            title: p.title,
-          },
+        await upsertMarketplaceProduct(account, {
+          sku: p.sku,
+          title: p.title,
+          imageUrl: p.imageUrl,
+          externalProductId: p.externalProductId,
+          externalVariationId: p.externalVariationId,
         });
         itemsProcessed++;
       }

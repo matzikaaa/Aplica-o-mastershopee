@@ -49,6 +49,12 @@ export {
 } from "./stock";
 
 export {
+  upsertMarketplaceProduct,
+  ensureProductForOrderItem,
+  type UpsertProductInput,
+} from "./product-upsert";
+
+export {
   upsertNormalizedOrder,
   resolveCostSnapshot,
   type UpsertOrderInput,

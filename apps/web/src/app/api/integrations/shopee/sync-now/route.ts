@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   prisma,
   recomputeMetricsForDays,
+  upsertMarketplaceProduct,
   upsertNormalizedOrder,
 } from "@mastershopee/database";
 import { ShopeeProvider, decryptSecret } from "@mastershopee/integrations";
@@ -28,6 +29,14 @@ export const maxDuration = 60;
 
 /** Margem para gravar cursor e métricas depois do último lote. */
 const BUDGET_MS = 45_000;
+
+/**
+ * Fatia do orçamento reservada ao catálogo. O objetivo do vendedor é ver os
+ * SKUs para preencher custo, então o catálogo vem primeiro — mas com teto:
+ * um catálogo grande não pode consumir a requisição inteira e deixar os
+ * pedidos de fora.
+ */
+const CATALOG_BUDGET_MS = 15_000;
 
 export async function POST(request: Request) {
   const { workspace } = await requireWorkspace();
@@ -72,12 +81,36 @@ export async function POST(request: Request) {
   const from = new Date(Date.now() - days * 24 * 3600 * 1000);
 
   const startedAt = Date.now();
+  let productsWritten = 0;
   let ordersWritten = 0;
   let ordersWithoutConfirmedFees = 0;
   let hasMore = true;
   const touchedDays = new Set<string>();
 
   try {
+    // ── Catálogo ───────────────────────────────────────────────────────
+    // Sem esta passada, só apareceriam os SKUs que venderam na janela. O
+    // vendedor precisa da lista inteira para cadastrar custo antes de a
+    // próxima venda acontecer.
+    let productCursor = { value: null as string | null };
+    let hasMoreProducts = true;
+    while (hasMoreProducts && Date.now() - startedAt < CATALOG_BUDGET_MS) {
+      const page = await provider.fetchProducts(credentials, productCursor);
+      for (const product of page.items) {
+        await upsertMarketplaceProduct(account, {
+          sku: product.sku,
+          title: product.title,
+          imageUrl: product.imageUrl,
+          externalProductId: product.externalProductId,
+          externalVariationId: product.externalVariationId,
+        });
+        productsWritten++;
+      }
+      productCursor = page.nextCursor;
+      hasMoreProducts = page.hasMore;
+    }
+
+    // ── Pedidos ────────────────────────────────────────────────────────
     while (hasMore && Date.now() - startedAt < BUDGET_MS) {
       const page = await provider.fetchOrders(credentials, cursor, from);
 
@@ -99,7 +132,11 @@ export async function POST(request: Request) {
       data: { lastSyncCursor: cursor.value, lastErrorMessage: err instanceof Error ? err.message : "erro" },
     });
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Falha ao consultar a Shopee.", ordersWritten },
+      {
+        error: err instanceof Error ? err.message : "Falha ao consultar a Shopee.",
+        productsWritten,
+        ordersWritten,
+      },
       { status: 502 },
     );
   }
@@ -118,8 +155,14 @@ export async function POST(request: Request) {
     },
   });
 
+  const productsWithoutCost = await prisma.product.count({
+    where: { workspaceId: workspace.id, costs: { none: {} } },
+  });
+
   return NextResponse.json({
     ok: true,
+    productsWritten,
+    productsWithoutCost,
     ordersWritten,
     ordersWithoutConfirmedFees,
     hasMore,

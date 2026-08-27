@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Download, Eye, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 interface PreviewOrder {
@@ -47,6 +48,8 @@ const brl = (v: string) =>
 interface SyncResult {
   ok?: boolean;
   error?: string;
+  productsWritten?: number;
+  productsWithoutCost?: number;
   ordersWritten?: number;
   ordersWithoutConfirmedFees?: number;
   hasMore?: boolean;
@@ -120,11 +123,25 @@ export function ShopeePreview() {
       {sync?.ok && (
         <div className="space-y-1 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs">
           <p>
-            {sync.ordersWritten} pedido(s) gravados.{" "}
+            {sync.productsWritten} produto(s) e {sync.ordersWritten} pedido(s) gravados.{" "}
             {sync.hasMore
               ? "Ainda há pedidos na fila — clique em Importar de novo para continuar de onde parou."
               : "Nada mais pendente nessa janela."}
           </p>
+          {/* Sem custo cadastrado, o pedido entra com margem igual à receita.
+              O painel marca isso como "sem custo", mas dizer aqui é o que
+              transforma a importação no próximo passo concreto. */}
+          {(sync.productsWithoutCost ?? 0) > 0 && (
+            <p>
+              <strong>{sync.productsWithoutCost} produto(s) ainda sem custo cadastrado.</strong> Enquanto o custo não
+              for preenchido, o lucro deles aparece como se o produto fosse de graça — o painel marca esses como "sem
+              custo". Preencha em{" "}
+              <Link href="/costs" className="underline underline-offset-2">
+                Custos
+              </Link>
+              .
+            </p>
+          )}
           {(sync.ordersWithoutConfirmedFees ?? 0) > 0 && (
             <p>
               {sync.ordersWithoutConfirmedFees} deles entraram sem taxa confirmada pela Shopee e aparecem marcados —
