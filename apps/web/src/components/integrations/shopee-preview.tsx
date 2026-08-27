@@ -19,6 +19,7 @@ interface PreviewOrder {
     marketplaceFeeAmount: string;
   };
   itens: { sku: string; title: string; quantity: number; unitPrice: string }[];
+  camposShopee: Record<string, number>;
   shopee: unknown;
 }
 
@@ -192,6 +193,20 @@ export function ShopeePreview() {
                   </li>
                 ))}
               </ul>
+
+              {Object.keys(o.camposShopee ?? {}).length > 0 && (
+                <div className="mt-2 rounded bg-muted/50 p-2">
+                  <p className="mb-1 font-medium">Campos financeiros que a Shopee devolveu</p>
+                  <div className="grid gap-x-4 sm:grid-cols-2">
+                    {Object.entries(o.camposShopee).map(([k, v]) => (
+                      <span key={k} className="flex justify-between gap-2 font-mono text-[11px]">
+                        <span className="text-muted-foreground">{k}</span>
+                        <span className="tabular-nums">{v.toFixed(2)}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <button
                 type="button"

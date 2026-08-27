@@ -18,6 +18,20 @@ import { getIntegrationEnv } from "@/lib/integration-env";
  * qualquer coisa entrar no banco. É a diferença entre confiar no mapeamento e
  * conferir o mapeamento.
  */
+/**
+ * Achata `order_income` em pares nome/valor numéricos, na ordem em que a
+ * Shopee mandou. Só números: é o que responde "de onde saiu esse valor" e o
+ * que evita despejar texto na tela de conferência.
+ */
+function flattenNumbers(value: unknown): Record<string, number> {
+  if (!value || typeof value !== "object") return {};
+  const out: Record<string, number> = {};
+  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "number") out[key] = v;
+  }
+  return out;
+}
+
 export async function POST(request: Request) {
   const { workspace } = await requireWorkspace();
 
@@ -95,8 +109,11 @@ export async function POST(request: Request) {
           quantity: i.quantity,
           unitPrice: i.unitPrice,
         })),
-        // O payload cru da Shopee, para conferir campo a campo contra o que
-        // foi calculado acima.
+        // Os campos financeiros da Shopee em lista plana, além do payload
+        // inteiro. Comparar o cálculo com o JSON cru exige achar a chave no
+        // meio de tudo; aqui os números ficam lado a lado com o que foi
+        // calculado, que é o que a conferência precisa.
+        camposShopee: flattenNumbers((o.raw as { escrow?: { order_income?: unknown } })?.escrow?.order_income),
         shopee: o.raw,
       })),
     });
