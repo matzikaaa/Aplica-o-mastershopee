@@ -70,7 +70,9 @@ export async function GET(request: Request) {
     // Optional pieces: absent is a documented, working state, not a fault.
     optional: {
       redis: getRedisUrl() ? "configurado" : "ausente (login sem limite de tentativas)",
-      shopee: process.env.SHOPEE_PARTNER_ID ? `configurado (${process.env.SHOPEE_ENV ?? "live"})` : "ausente",
+      shopee: process.env.SHOPEE_PARTNER_ID
+        ? `configurado (${process.env.SHOPEE_ENV ?? "live"}, chave lida como "${process.env.SHOPEE_KEY_ENCODING ?? "raw"}")`
+        : "ausente",
       whatsapp: process.env.WHATSAPP_ACCESS_TOKEN ? "configurado" : "ausente",
     },
   };

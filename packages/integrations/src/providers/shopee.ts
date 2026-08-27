@@ -1,5 +1,12 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import type { MarketplaceProvider, FetchPage } from "../provider";
+import {
+  resolveShopeeKey,
+  shopeeKeyCandidates,
+  shopeeSign,
+  type ShopeeKeyCandidate,
+  type ShopeeKeyEncoding,
+} from "./shopee-key";
 import {
   MarketplaceApiError,
   MarketplaceNotImplementedError,
@@ -32,6 +39,16 @@ import {
  *     implemented until that access exists.
  */
 
+/** One reading of the partner key, and what Shopee said about it. */
+export interface ShopeeSignAttempt {
+  encoding: ShopeeKeyEncoding;
+  /** Byte length of the derived key — never the key itself. */
+  keyByteLength: number;
+  /** True when Shopee did *not* answer `error_sign`. */
+  signAccepted: boolean;
+  shopeeError: string | null;
+}
+
 export interface ShopeeDiagnosis {
   ok: boolean;
   environment: "test" | "live";
@@ -39,6 +56,15 @@ export interface ShopeeDiagnosis {
   redirectUrl: string;
   partnerIdLength: number;
   partnerKeyLength: number;
+  /** The reading currently configured via SHOPEE_KEY_ENCODING. */
+  keyEncoding: ShopeeKeyEncoding;
+  /**
+   * The reading Shopee actually accepted, when the probe found one. Null
+   * means every reading was refused — the problem is not the encoding.
+   */
+  acceptedKeyEncoding: ShopeeKeyEncoding | null;
+  /** Every reading tried, in the order tried, with Shopee's answer. */
+  signAttempts: ShopeeSignAttempt[];
   /** What we can tell the operator to do about it. */
   problems: string[];
   /** Shopee's own error string, never paraphrased away. */
@@ -55,7 +81,7 @@ function explainShopeeError(code: string, environment: "test" | "live"): string 
   const other = environment === "test" ? "live" : "test";
   switch (code) {
     case "error_sign":
-      return `Assinatura recusada. Quase sempre é uma destas: o partner_key é do ambiente ${other} (SHOPEE_ENV está em "${environment}"), foi colado incompleto, ou o relógio da máquina está fora do horário real. A assinatura inclui o horário e a Shopee recusa fora de ~5 minutos.`;
+      return `Assinatura recusada em todas as leituras da chave testadas. Sobram estas causas: o partner_key é do ambiente ${other} (SHOPEE_ENV está em "${environment}"), foi colado incompleto, ou o relógio da máquina está fora do horário real — a assinatura inclui o horário e a Shopee recusa fora de ~5 minutos.`;
     case "error_param":
       return "Parâmetro faltando ou malformado na chamada. Confira partner_id e o redirect cadastrado no console.";
     case "invalid_partner_id":
@@ -78,6 +104,7 @@ export class ShopeeProvider implements MarketplaceProvider {
   readonly supportsWebhooks = true;
 
   private readonly partnerHost: string;
+  private readonly signingKey: Buffer;
 
   constructor(
     private readonly partnerId: string,
@@ -88,13 +115,22 @@ export class ShopeeProvider implements MarketplaceProvider {
     // called against the live host (or vice versa) fails with
     // "invalid_partner_id", not a clearer environment-mismatch error.
     env: "test" | "live" = "live",
+    // How to read the value the console printed. Default is "raw" (assinar
+    // com a string exibida) porque é o comportamento que já existia; o
+    // `diagnose` descobre empiricamente qual leitura a Shopee aceita e diz
+    // qual valor pôr em SHOPEE_KEY_ENCODING. Ver ./shopee-key.ts.
+    private readonly keyEncoding: ShopeeKeyEncoding = "raw",
   ) {
     this.partnerHost = env === "test" ? TEST_HOST : LIVE_HOST;
+    this.signingKey = resolveShopeeKey(partnerKey, keyEncoding);
+  }
+
+  private buildSignBase(path: string, timestamp: number, accessToken?: string, shopId?: string): string {
+    return [this.partnerId, path, timestamp, accessToken, shopId].filter((v) => v !== undefined).join("");
   }
 
   private sign(path: string, timestamp: number, accessToken?: string, shopId?: string): string {
-    const base = [this.partnerId, path, timestamp, accessToken, shopId].filter((v) => v !== undefined).join("");
-    return createHmac("sha256", this.partnerKey).update(base).digest("hex");
+    return shopeeSign(this.signingKey, this.buildSignBase(path, timestamp, accessToken, shopId));
   }
 
   /**
@@ -110,7 +146,7 @@ export class ShopeeProvider implements MarketplaceProvider {
     const provided = headers["authorization"] ?? headers["Authorization"];
     if (!provided || !this.partnerKey) return false;
 
-    const expected = createHmac("sha256", this.partnerKey).update(rawBody).digest("hex");
+    const expected = shopeeSign(this.signingKey, rawBody);
     const a = Buffer.from(provided);
     const b = Buffer.from(expected);
     if (a.length !== b.length) return false;
@@ -147,16 +183,91 @@ export class ShopeeProvider implements MarketplaceProvider {
       redirectUrl: this.redirectUrl,
       partnerIdLength: this.partnerId.trim().length,
       partnerKeyLength: this.partnerKey.trim().length,
+      keyEncoding: this.keyEncoding,
     };
 
     if (problems.length > 0) {
-      return { ...base, ok: false, problems, shopeeError: null, shopCount: null };
+      return {
+        ...base,
+        ok: false,
+        problems,
+        shopeeError: null,
+        shopCount: null,
+        acceptedKeyEncoding: null,
+        signAttempts: [],
+      };
     }
 
+    // A leitura configurada vai primeiro: quando ela já funciona, o
+    // diagnóstico custa exatamente uma chamada, como antes.
+    const candidates = shopeeKeyCandidates(this.partnerKey);
+    const configured = candidates.filter((c) => c.encoding === this.keyEncoding);
+    const rest = candidates.filter((c) => c.encoding !== this.keyEncoding);
+    const ordered = [...configured, ...rest];
+
+    const attempts: ShopeeSignAttempt[] = [];
+    let lastFailure: Omit<ShopeeDiagnosis, "acceptedKeyEncoding" | "signAttempts"> | null = null;
+
+    for (const candidate of ordered) {
+      const result = await this.probeWithKey(candidate, base);
+      attempts.push(result.attempt);
+
+      if (result.diagnosis.ok || result.attempt.signAccepted) {
+        // A assinatura passou. Se ainda assim veio erro, o problema é outro
+        // (permissão, partner_id, endpoint) e insistir com outras leituras
+        // da chave só gastaria chamadas.
+        const acceptedKeyEncoding = candidate.encoding;
+        const problemsWithHint =
+          acceptedKeyEncoding === this.keyEncoding
+            ? result.diagnosis.problems
+            : [
+                `A Shopee aceitou a assinatura com a leitura "${acceptedKeyEncoding}" da chave, e não com a configurada ("${this.keyEncoding}"). Defina SHOPEE_KEY_ENCODING=${acceptedKeyEncoding} para que o restante da aplicação assine igual.`,
+                ...result.diagnosis.problems,
+              ];
+        return {
+          ...result.diagnosis,
+          // Só é "ok" de verdade quando a assinatura que passou é a que a
+          // aplicação usa em produção — senão o diagnóstico estaria dizendo
+          // que está tudo certo enquanto o sync continua quebrado.
+          ok: result.diagnosis.ok && acceptedKeyEncoding === this.keyEncoding,
+          problems: problemsWithHint,
+          acceptedKeyEncoding,
+          signAttempts: attempts,
+        };
+      }
+
+      lastFailure = result.diagnosis;
+    }
+
+    return {
+      ...(lastFailure ?? {
+        ...base,
+        ok: false,
+        problems: [explainShopeeError("error_sign", base.environment)],
+        shopeeError: "error_sign",
+        shopCount: null,
+      }),
+      acceptedKeyEncoding: null,
+      signAttempts: attempts,
+    };
+  }
+
+  /**
+   * Uma sondagem, com uma leitura da chave. Devolve o diagnóstico completo
+   * e, à parte, se a assinatura em si passou — `error_sign` é o único erro
+   * que fala sobre a chave; qualquer outra resposta significa que a Shopee
+   * validou a assinatura e reclamou de outra coisa.
+   */
+  private async probeWithKey(
+    candidate: ShopeeKeyCandidate,
+    base: Omit<ShopeeDiagnosis, "ok" | "problems" | "shopeeError" | "shopCount" | "acceptedKeyEncoding" | "signAttempts">,
+  ): Promise<{ diagnosis: Omit<ShopeeDiagnosis, "acceptedKeyEncoding" | "signAttempts">; attempt: ShopeeSignAttempt }> {
     const path = "/api/v2/public/get_shops_by_partner";
     const timestamp = Math.floor(Date.now() / 1000);
-    const sign = this.sign(path, timestamp);
+    const sign = shopeeSign(candidate.key, this.buildSignBase(path, timestamp));
     const url = `${this.partnerHost}${path}?partner_id=${this.partnerId}&timestamp=${timestamp}&sign=${sign}&page_size=1`;
+
+    const attemptBase = { encoding: candidate.encoding, keyByteLength: candidate.byteLength };
 
     try {
       const res = await fetch(url, { method: "GET" });
@@ -166,38 +277,55 @@ export class ShopeeProvider implements MarketplaceProvider {
         data = JSON.parse(raw) as typeof data;
       } catch {
         return {
-          ...base,
-          ok: false,
-          problems: [`Shopee respondeu algo que não é JSON (HTTP ${res.status}).`],
-          shopeeError: raw.slice(0, 300),
-          shopCount: null,
+          diagnosis: {
+            ...base,
+            ok: false,
+            problems: [`Shopee respondeu algo que não é JSON (HTTP ${res.status}).`],
+            shopeeError: raw.slice(0, 300),
+            shopCount: null,
+          },
+          // Resposta ilegível não diz nada sobre a assinatura; tratar como
+          // recusa faria a sondagem seguir para as outras leituras, que é o
+          // comportamento certo aqui.
+          attempt: { ...attemptBase, signAccepted: false, shopeeError: raw.slice(0, 120) },
         };
       }
 
       if (data.error) {
+        const shopeeError = `${data.error}${data.message ? ` — ${data.message}` : ""}`;
         return {
-          ...base,
-          ok: false,
-          problems: [explainShopeeError(data.error, base.environment)],
-          shopeeError: `${data.error}${data.message ? ` — ${data.message}` : ""}`,
-          shopCount: null,
+          diagnosis: {
+            ...base,
+            ok: false,
+            problems: [explainShopeeError(data.error, base.environment)],
+            shopeeError,
+            shopCount: null,
+          },
+          attempt: { ...attemptBase, signAccepted: data.error !== "error_sign", shopeeError },
         };
       }
 
       return {
-        ...base,
-        ok: true,
-        problems: [],
-        shopeeError: null,
-        shopCount: data.response?.authed_shop_list?.length ?? 0,
+        diagnosis: {
+          ...base,
+          ok: true,
+          problems: [],
+          shopeeError: null,
+          shopCount: data.response?.authed_shop_list?.length ?? 0,
+        },
+        attempt: { ...attemptBase, signAccepted: true, shopeeError: null },
       };
     } catch (err) {
+      const message = err instanceof Error ? err.message : "erro de rede";
       return {
-        ...base,
-        ok: false,
-        problems: [`Não foi possível alcançar ${this.partnerHost}: ${err instanceof Error ? err.message : "erro de rede"}`],
-        shopeeError: null,
-        shopCount: null,
+        diagnosis: {
+          ...base,
+          ok: false,
+          problems: [`Não foi possível alcançar ${this.partnerHost}: ${message}`],
+          shopeeError: null,
+          shopCount: null,
+        },
+        attempt: { ...attemptBase, signAccepted: false, shopeeError: message },
       };
     }
   }

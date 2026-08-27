@@ -100,6 +100,8 @@ SHOPEE_PARTNER_ID=<novo, do Live>
 SHOPEE_PARTNER_KEY=<novo, do Live>
 SHOPEE_ENV=live
 SHOPEE_REDIRECT_URL=https://SEU-DOMINIO/api/integrations/shopee/callback
+# leia a seção sobre error_sign antes de mexer neste
+SHOPEE_KEY_ENCODING=raw
 ```
 
 Reinicie o servidor e vá em **Integrações → Verificar credenciais** antes de
@@ -109,7 +111,7 @@ meio do redirect de autorização, levaria horas.
 
 ---
 
-## Sobre o `error_sign` que travou o ambiente de teste
+## Sobre o `error_sign` (teste **e** Live)
 
 A fórmula da assinatura no código confere com a documentada:
 
@@ -117,8 +119,41 @@ A fórmula da assinatura no código confere com a documentada:
 sign = HMAC-SHA256(partner_id + api_path + timestamp, partner_key) em hex
 ```
 
-Isso foi verificado recalculando à mão. As causas que restam, em ordem de
-probabilidade:
+Isso foi verificado recalculando à mão. O que a documentação **não** diz é em
+que formato a `partner_key` sai do console. Ela é exibida como `shpk` seguido
+de 60 caracteres hexadecimais — e esses 60 hexadecimais decodificam para
+exatamente 30 bytes ASCII imprimíveis. Isso não é o que bytes aleatórios
+parecem, então há duas leituras plausíveis da mesma chave: a string exibida
+*é* a chave, ou a string exibida é a impressão hexadecimal da chave.
+
+Assinar com a leitura errada devolve `error_sign` — o mesmo erro de ambiente
+trocado, chave truncada e relógio fora de hora. Por isso o diagnóstico não
+escolhe uma leitura: ele **pergunta à Shopee**. Em **Integrações → Verificar
+credenciais** (`POST /api/integrations/shopee/diagnose`) ele assina a mesma
+chamada com cada leitura e reporta qual passou:
+
+```json
+{
+  "keyEncoding": "raw",
+  "acceptedKeyEncoding": "hex-decoded",
+  "signAttempts": [
+    { "encoding": "raw",         "keyByteLength": 64, "signAccepted": false },
+    { "encoding": "stripped",    "keyByteLength": 60, "signAccepted": false },
+    { "encoding": "hex-decoded", "keyByteLength": 30, "signAccepted": true  }
+  ]
+}
+```
+
+Quando `acceptedKeyEncoding` vier diferente de `keyEncoding`, ponha o valor
+aceito em `SHOPEE_KEY_ENCODING` (na Vercel: Settings → Environment Variables)
+e faça o redeploy. É o que faz o resto da aplicação — OAuth, sync, webhook —
+assinar igual ao que passou no teste. Enquanto os dois não baterem, o
+diagnóstico **não** responde `ok: true`, de propósito: dizer que está tudo
+certo com o sync quebrado seria mentira.
+
+O relatório informa só o tamanho em bytes de cada leitura, nunca a chave.
+
+Se **nenhuma** leitura passar, a codificação não é o problema. Sobram:
 
 1. **Credenciais do ambiente trocado** — partner_key de Test contra host Live,
    ou o contrário. O diagnóstico aponta isso explicitamente.
@@ -126,11 +161,9 @@ probabilidade:
    corta visualmente. O diagnóstico mostra o tamanho para conferir.
 3. **Relógio fora do horário** — a assinatura inclui o timestamp e a Shopee
    recusa fora de ~5 minutos. Sincronize o relógio do Windows.
-4. **Problema no lado da Shopee** — foi o que pareceu no ambiente de teste, já
-   que a criação da Test Account também falhava. O ticket aberto cobre isso.
-
-Com as credenciais Live novas, vale rodar o diagnóstico **antes** de concluir
-que o problema persiste: são credenciais diferentes, emitidas por outro fluxo.
+4. **IP não liberado** — o console tem allowlist de IP por app. A Vercel não
+   dá IP fixo no plano padrão; se a Shopee exigir, é preciso sair por um IP
+   estático (o worker no Railway, ou um proxy).
 
 ## Limites da API que valem saber
 

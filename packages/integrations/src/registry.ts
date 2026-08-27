@@ -2,6 +2,7 @@ import type { MarketplaceType } from "@mastershopee/shared";
 import type { MarketplaceProvider } from "./provider";
 import { MercadoLivreProvider } from "./providers/mercado-livre";
 import { ShopeeProvider } from "./providers/shopee";
+import type { ShopeeKeyEncoding } from "./providers/shopee-key";
 import { SheinProvider } from "./providers/shein";
 import { TikTokShopProvider } from "./providers/tiktok-shop";
 
@@ -13,6 +14,8 @@ export interface IntegrationEnv {
   // Live approval) — a Test partner_id called against the Live host fails
   // with "invalid_partner_id". Defaults to "live".
   SHOPEE_ENV?: "test" | "live";
+  /** Como ler o partner_key exibido no console. Ver providers/shopee-key.ts. */
+  SHOPEE_KEY_ENCODING?: ShopeeKeyEncoding;
   MERCADOLIVRE_APP_ID?: string;
   MERCADOLIVRE_CLIENT_SECRET?: string;
   MERCADOLIVRE_REDIRECT_URI?: string;
@@ -37,6 +40,7 @@ export function createProvider(type: MarketplaceType, env: IntegrationEnv): Mark
         env.SHOPEE_PARTNER_KEY ?? "",
         env.SHOPEE_REDIRECT_URL ?? "",
         env.SHOPEE_ENV ?? "live",
+        env.SHOPEE_KEY_ENCODING ?? "raw",
       );
     case "MERCADO_LIVRE":
       return new MercadoLivreProvider(

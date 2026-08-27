@@ -1,4 +1,13 @@
-import type { IntegrationEnv } from "@mastershopee/integrations";
+import type { IntegrationEnv, ShopeeKeyEncoding } from "@mastershopee/integrations";
+
+/**
+ * Só as três leituras conhecidas passam. Um valor digitado errado vira
+ * "raw" (o comportamento padrão) em vez de derrubar o boot com um TypeScript
+ * cast que mentiria sobre o que está configurado.
+ */
+function parseShopeeKeyEncoding(value: string | undefined): ShopeeKeyEncoding {
+  return value === "stripped" || value === "hex-decoded" ? value : "raw";
+}
 
 export function getIntegrationEnv(): IntegrationEnv {
   return {
@@ -6,6 +15,7 @@ export function getIntegrationEnv(): IntegrationEnv {
     SHOPEE_PARTNER_KEY: process.env.SHOPEE_PARTNER_KEY,
     SHOPEE_REDIRECT_URL: process.env.SHOPEE_REDIRECT_URL,
     SHOPEE_ENV: process.env.SHOPEE_ENV === "test" ? "test" : "live",
+    SHOPEE_KEY_ENCODING: parseShopeeKeyEncoding(process.env.SHOPEE_KEY_ENCODING),
     MERCADOLIVRE_APP_ID: process.env.MERCADOLIVRE_APP_ID,
     MERCADOLIVRE_CLIENT_SECRET: process.env.MERCADOLIVRE_CLIENT_SECRET,
     MERCADOLIVRE_REDIRECT_URI: process.env.MERCADOLIVRE_REDIRECT_URI,

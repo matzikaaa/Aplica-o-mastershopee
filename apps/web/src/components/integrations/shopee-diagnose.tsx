@@ -4,6 +4,15 @@ import { useState } from "react";
 import { Stethoscope } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+type KeyEncoding = "raw" | "stripped" | "hex-decoded";
+
+interface SignAttempt {
+  encoding: KeyEncoding;
+  keyByteLength: number;
+  signAccepted: boolean;
+  shopeeError: string | null;
+}
+
 interface Diagnosis {
   ok: boolean;
   environment: "test" | "live";
@@ -11,10 +20,19 @@ interface Diagnosis {
   redirectUrl: string;
   partnerIdLength: number;
   partnerKeyLength: number;
+  keyEncoding: KeyEncoding;
+  acceptedKeyEncoding: KeyEncoding | null;
+  signAttempts: SignAttempt[];
   problems: string[];
   shopeeError: string | null;
   shopCount: number | null;
 }
+
+const ENCODING_LABEL: Record<KeyEncoding, string> = {
+  raw: "chave como exibida",
+  stripped: "sem o prefixo shpk",
+  "hex-decoded": "hexadecimal decodificado",
+};
 
 /**
  * Checks the Shopee partner credentials against Shopee itself, before anyone
@@ -24,6 +42,11 @@ interface Diagnosis {
  * whether the key is from the other environment, was pasted short, or the
  * machine's clock drifted. Each guess costs a full round trip through the
  * seller's browser. This asks the question directly.
+ *
+ * Uma dessas causas não dá para deduzir olhando: a Shopee imprime a
+ * partner_key como `shpk` + hexadecimal e não documenta se a string exibida
+ * *é* a chave do HMAC. O diagnóstico assina com cada leitura e mostra qual a
+ * Shopee aceitou — a tabela abaixo é esse resultado, não uma suposição.
  */
 export function ShopeeDiagnose() {
   const [loading, setLoading] = useState(false);
@@ -67,7 +90,26 @@ export function ShopeeDiagnose() {
             <span className="truncate" title={result.redirectUrl}>
               Redirect: {result.redirectUrl || "não configurado"}
             </span>
+            <span>
+              Leitura da chave: <strong>{ENCODING_LABEL[result.keyEncoding] ?? result.keyEncoding}</strong>
+            </span>
           </div>
+
+          {result.signAttempts.length > 1 && (
+            <div className="space-y-1 rounded-lg bg-muted/40 px-3 py-2">
+              <p className="font-medium">Leituras da chave testadas contra a Shopee</p>
+              {result.signAttempts.map((a) => (
+                <p key={a.encoding} className="flex items-center gap-2">
+                  <span aria-hidden>{a.signAccepted ? "✓" : "✗"}</span>
+                  <span className="font-mono text-[11px]">{a.encoding}</span>
+                  <span className="text-muted-foreground">
+                    {ENCODING_LABEL[a.encoding] ?? a.encoding} · {a.keyByteLength} bytes ·{" "}
+                    {a.signAccepted ? "assinatura aceita" : (a.shopeeError ?? "recusada")}
+                  </span>
+                </p>
+              ))}
+            </div>
+          )}
 
           {result.ok ? (
             <p className="rounded-lg border border-success/30 bg-success/10 px-3 py-2">
@@ -82,6 +124,11 @@ export function ShopeeDiagnose() {
               ))}
               {result.shopeeError && (
                 <p className="font-mono text-[11px] opacity-80">Resposta da Shopee: {result.shopeeError}</p>
+              )}
+              {result.acceptedKeyEncoding && result.acceptedKeyEncoding !== result.keyEncoding && (
+                <p className="rounded bg-background/60 px-2 py-1 font-mono text-[11px]">
+                  SHOPEE_KEY_ENCODING={result.acceptedKeyEncoding}
+                </p>
               )}
             </div>
           )}
