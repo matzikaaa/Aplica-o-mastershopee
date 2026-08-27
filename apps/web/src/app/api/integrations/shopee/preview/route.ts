@@ -26,10 +26,16 @@ export async function POST(request: Request) {
     include: { credential: true },
   });
 
-  if (!account?.credential) {
+  // Duas falhas diferentes: nunca conectou, ou conectou e o token não ficou
+  // gravado. A segunda parece a primeira na tela e manda o vendedor repetir
+  // uma autorização que já deu certo.
+  if (!account) {
+    return NextResponse.json({ error: "Nenhuma conta Shopee conectada neste workspace." }, { status: 404 });
+  }
+  if (!account.credential) {
     return NextResponse.json(
-      { error: "Nenhuma conta Shopee conectada neste workspace." },
-      { status: 404 },
+      { error: "A conta Shopee existe, mas está sem token salvo — a autorização não foi concluída. Conecte novamente." },
+      { status: 409 },
     );
   }
 

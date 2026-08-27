@@ -36,8 +36,14 @@ export async function POST(request: Request) {
     where: { workspaceId: workspace.id, marketplace: "SHOPEE" },
     include: { credential: true },
   });
-  if (!account?.credential) {
-    return NextResponse.json({ error: "Nenhuma conta Shopee conectada." }, { status: 404 });
+  if (!account) {
+    return NextResponse.json({ error: "Nenhuma conta Shopee conectada neste workspace." }, { status: 404 });
+  }
+  if (!account.credential) {
+    return NextResponse.json(
+      { error: "A conta Shopee existe, mas está sem token salvo — a autorização não foi concluída. Conecte novamente." },
+      { status: 409 },
+    );
   }
 
   const body = (await request.json().catch(() => ({}))) as { days?: number; restart?: boolean };

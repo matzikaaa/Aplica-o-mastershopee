@@ -32,7 +32,13 @@ export interface MarketplaceProvider {
   getAuthorizationUrl(state: string): string;
 
   /** Exchanges the OAuth callback `code` for tokens. */
-  exchangeAuthorizationCode(code: string): Promise<OAuthTokenResult>;
+  /**
+   * `shopId` existe porque a Shopee devolve `shop_id` no redirect e exige
+   * esse mesmo id no corpo da troca do code por token — sem ele a troca é
+   * recusada. Marketplaces que identificam a loja pelo próprio token
+   * ignoram o parâmetro.
+   */
+  exchangeAuthorizationCode(code: string, shopId?: string): Promise<OAuthTokenResult>;
 
   /** Refreshes an expiring access token. */
   refreshAccessToken(refreshToken: string): Promise<OAuthTokenResult>;

@@ -9,7 +9,11 @@ import { MarketplaceCard } from "@/components/integrations/marketplace-card";
 import { ShopeeDiagnose } from "@/components/integrations/shopee-diagnose";
 import { ShopeePreview } from "@/components/integrations/shopee-preview";
 
-export default async function IntegrationsPage({ searchParams }: { searchParams: { error?: string; reason?: string; connected?: string } }) {
+export default async function IntegrationsPage({
+  searchParams,
+}: {
+  searchParams: { error?: string; reason?: string; connected?: string; message?: string; queue?: string };
+}) {
   const { workspace } = await requireWorkspace();
   const env = getIntegrationEnv();
   const [permissions, accounts] = await Promise.all([
@@ -28,7 +32,9 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
 
       {searchParams.connected && (
         <div className="rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
-          Conexão realizada! A primeira sincronização começou — pode levar alguns minutos.
+          {searchParams.queue === "unavailable"
+            ? 'Conexão realizada. A sincronização automática não está configurada neste ambiente — use "Importar pedidos" abaixo para trazer os pedidos agora.'
+            : "Conexão realizada! A primeira sincronização começou — pode levar alguns minutos."}
         </div>
       )}
       {searchParams.error === "plan_limit" && (
@@ -40,8 +46,13 @@ export default async function IntegrationsPage({ searchParams }: { searchParams:
         </div>
       )}
       {searchParams.error === "oauth_failed" && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          Não foi possível concluir a conexão. Tente novamente.
+        <div className="space-y-1 rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <p>Não foi possível concluir a conexão.</p>
+          {/* O callback já traz o erro do marketplace aqui. Trocá-lo por
+              "tente novamente" transforma uma causa identificada em uma
+              tentativa às cegas — foi o que escondeu uma troca de token
+              recusada por falta do shop_id. */}
+          {searchParams.message && <p className="font-mono text-xs opacity-90">{searchParams.message}</p>}
         </div>
       )}
 

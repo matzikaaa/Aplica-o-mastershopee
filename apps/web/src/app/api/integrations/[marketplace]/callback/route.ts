@@ -13,6 +13,11 @@ export async function GET(request: Request, { params }: { params: { marketplace:
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
+  // A Shopee devolve o shop_id no redirect e exige o mesmo id no corpo da
+  // troca do code por token. Sem repassar daqui, a troca é recusada, nada é
+  // gravado, e a tela fica dizendo "nenhuma conta conectada" depois de uma
+  // autorização que o vendedor viu dar certo do lado da Shopee.
+  const shopId = url.searchParams.get("shop_id") ?? undefined;
 
   if (!marketplace || !code || !state) {
     return NextResponse.redirect(new URL("/integrations?error=invalid_callback", request.url));
@@ -25,7 +30,7 @@ export async function GET(request: Request, { params }: { params: { marketplace:
 
   try {
     const provider = createProvider(marketplace, getIntegrationEnv());
-    const token = await provider.exchangeAuthorizationCode(code);
+    const token = await provider.exchangeAuthorizationCode(code, shopId);
 
     const account = await prisma.marketplaceAccount.upsert({
       where: {
@@ -84,11 +89,31 @@ export async function GET(request: Request, { params }: { params: { marketplace:
       },
     });
 
-    // Kicks off the first sync (§82) — the Integrations page's SyncProgress
-    // component polls the real IntegrationSync row this job writes.
-    await marketplaceSyncQueue.add("initial-full-sync", { marketplaceAccountId: account.id, type: "FULL" });
+    // Dispara a primeira sincronização (§82) — a página de Integrações
+    // acompanha a IntegrationSync que esse job escreve.
+    //
+    // Sem Redis isto lança, e lançar aqui desfaria uma conexão que já deu
+    // certo: a conta e as credenciais acima já estão gravadas, e existe a
+    // sincronização manual que roda sem fila. Perder a conexão inteira por
+    // causa do agendamento seria trocar um problema pequeno por um grande.
+    let queued = true;
+    try {
+      await marketplaceSyncQueue.add("initial-full-sync", { marketplaceAccountId: account.id, type: "FULL" });
+    } catch (queueErr) {
+      queued = false;
+      captureError(queueErr, { marketplace, workspaceId: verified.workspaceId, route: "integrations.callback.enqueue" });
+      await prisma.notification.create({
+        data: {
+          workspaceId: verified.workspaceId,
+          title: "Sincronização automática indisponível",
+          body: "A conta foi conectada, mas a fila de sincronização não está configurada. Use \"Importar pedidos\" em Integrações para trazer os pedidos agora.",
+        },
+      });
+    }
 
-    return NextResponse.redirect(new URL("/integrations?connected=1", request.url));
+    return NextResponse.redirect(
+      new URL(`/integrations?connected=1${queued ? "" : "&queue=unavailable"}`, request.url),
+    );
   } catch (err) {
     captureError(err, { marketplace, workspaceId: verified.workspaceId, route: "integrations.callback" });
     const message = err instanceof MarketplaceApiError ? err.message : "Falha ao conectar com o marketplace.";
