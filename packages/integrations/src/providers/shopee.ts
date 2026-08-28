@@ -788,6 +788,11 @@ export class ShopeeProvider implements MarketplaceProvider {
     credentials: ProviderCredentials,
     cursor: SyncCursor,
     updatedAfter?: Date,
+    // Página menor de propósito. Cada pedido custa uma chamada de escrow mais
+    // um punhado de gravações; 50 de uma vez não cabem no tempo de uma função
+    // serverless, e o orçamento só é conferido entre páginas. Menor significa
+    // mais chances de gravar e salvar o cursor antes do corte.
+    pageSize = 20,
   ): Promise<FetchPage<NormalizedOrder>> {
     const now = Math.floor(Date.now() / 1000);
 
@@ -809,7 +814,7 @@ export class ShopeeProvider implements MarketplaceProvider {
       time_range_field: "update_time",
       time_from: String(from),
       time_to: String(to),
-      page_size: "50",
+      page_size: String(pageSize),
       ...(innerCursor ? { cursor: innerCursor } : {}),
     });
 

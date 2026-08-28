@@ -3,11 +3,11 @@ import {
   prisma,
   recomputeMetricsForDays,
   resolveFreshCredentials,
-  upsertMarketplaceProduct,
   upsertNormalizedOrder,
 } from "@mastershopee/database";
 import { ShopeeProvider, decryptSecret, encryptSecret } from "@mastershopee/integrations";
 import { requireWorkspace } from "@/lib/session";
+import { resolveShopeeAccount } from "@/lib/shopee-account";
 import { getIntegrationEnv } from "@/lib/integration-env";
 
 /**
@@ -44,32 +44,16 @@ const CATALOG_BUDGET_MS = 12_000;
 export async function POST(request: Request) {
   const { workspace } = await requireWorkspace();
 
-  // Uma tentativa de conexão que falhou deixa uma conta órfã para trás, e
-  // `findFirst` sem ordem pega qualquer uma. A que interessa é a que tem
-  // token e foi conectada por último — escolher a errada faria a importação
-  // falhar por "sem token" com a conta boa ali do lado.
-  const account = await prisma.marketplaceAccount.findFirst({
-    where: {
-      workspaceId: workspace.id,
-      marketplace: "SHOPEE",
-      status: { not: "DISCONNECTED" },
-      credential: { isNot: null },
-    },
-    include: { credential: true },
-    orderBy: [{ connectedAt: "desc" }, { createdAt: "desc" }],
-  });
-  if (!account) {
-    return NextResponse.json({ error: "Nenhuma conta Shopee conectada neste workspace." }, { status: 404 });
-  }
-  if (!account.credential) {
-    return NextResponse.json(
-      { error: "A conta Shopee existe, mas está sem token salvo — a autorização não foi concluída. Conecte novamente." },
-      { status: 409 },
-    );
+  const account = await resolveShopeeAccount(workspace.id);
+  if ("error" in account) {
+    return NextResponse.json({ error: account.error }, { status: account.status });
   }
 
   const body = (await request.json().catch(() => ({}))) as { days?: number; restart?: boolean };
-  const days = Math.min(Math.max(body.days ?? 30, 1), 365);
+  // A Shopee só consulta 15 dias por chamada; o cursor guarda em que janela
+  // parou e vai andando até alcançar o presente. Pedir 120 dias não é uma
+  // requisição gigante — são várias, retomadas a cada clique.
+  const days = Math.min(Math.max(body.days ?? 120, 1), 365);
 
   const env = getIntegrationEnv();
   const provider = new ShopeeProvider(
@@ -104,45 +88,33 @@ export async function POST(request: Request) {
   const from = new Date(Date.now() - days * 24 * 3600 * 1000);
 
   const startedAt = Date.now();
-  let productsWritten = 0;
   let ordersWritten = 0;
   let ordersWithoutConfirmedFees = 0;
   let hasMore = true;
   const touchedDays = new Set<string>();
 
   try {
-    // ── Catálogo ───────────────────────────────────────────────────────
-    // Sem esta passada, só apareceriam os SKUs que venderam na janela. O
-    // vendedor precisa da lista inteira para cadastrar custo antes de a
-    // próxima venda acontecer.
-    let productCursor = { value: null as string | null };
-    let hasMoreProducts = true;
-    while (hasMoreProducts && Date.now() - startedAt < CATALOG_BUDGET_MS) {
-      const page = await provider.fetchProducts(credentials, productCursor);
-      for (const product of page.items) {
-        await upsertMarketplaceProduct(account, {
-          sku: product.sku,
-          title: product.title,
-          imageUrl: product.imageUrl,
-          externalProductId: product.externalProductId,
-          externalVariationId: product.externalVariationId,
-        });
-        productsWritten++;
-      }
-      productCursor = page.nextCursor;
-      hasMoreProducts = page.hasMore;
-    }
-
     // ── Pedidos ────────────────────────────────────────────────────────
     while (hasMore && Date.now() - startedAt < BUDGET_MS) {
       const page = await provider.fetchOrders(credentials, cursor, from);
 
+      let completou = true;
       for (const order of page.items) {
+        if (Date.now() - startedAt > BUDGET_MS) {
+          // Estourou no meio da página: não avança o cursor. O próximo clique
+          // refaz esta página inteira, e refazer é inofensivo porque a
+          // gravação é idempotente — enquanto perder o cursor faria recomeçar
+          // do início de tudo.
+          completou = false;
+          break;
+        }
         await upsertNormalizedOrder(account, order);
         ordersWritten++;
         if (order.feesFromEscrow === false) ordersWithoutConfirmedFees++;
         touchedDays.add(order.orderedAt.toISOString().slice(0, 10));
       }
+
+      if (!completou) break;
 
       cursor = page.nextCursor;
       hasMore = page.hasMore;
@@ -157,7 +129,6 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: err instanceof Error ? err.message : "Falha ao consultar a Shopee.",
-        productsWritten,
         ordersWritten,
       },
       { status: 502 },
@@ -184,7 +155,6 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     ok: true,
-    productsWritten,
     productsWithoutCost,
     ordersWritten,
     ordersWithoutConfirmedFees,

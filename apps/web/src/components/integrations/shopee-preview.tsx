@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, Eye, TriangleAlert } from "lucide-react";
+import { Download, Eye, Tags, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -55,13 +55,18 @@ interface SyncResult {
   hasMore?: boolean;
 }
 
+type Etapa = "skus" | "pedidos";
+
 export function ShopeePreview() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Preview | null>(null);
   const [open, setOpen] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
+  const [syncing, setSyncing] = useState<Etapa | null>(null);
   const [sync, setSync] = useState<SyncResult | null>(null);
+  // Acumulado entre cliques: cada requisição traz um pedaço, e o total é o
+  // que responde "já acabou?".
+  const [totalPedidos, setTotalPedidos] = useState(0);
 
   /**
    * Toda chamada passa por aqui porque o modo de falhar é o mesmo: quando a
@@ -109,15 +114,31 @@ export function ShopeePreview() {
     }
   }
 
+  async function importarSkus() {
+    setSyncing("skus");
+    setSync(null);
+    try {
+      const data = await chamar<SyncResult>("/api/integrations/shopee/sync-products", {});
+      setSync(data);
+      if (data.ok) router.refresh();
+    } finally {
+      setSyncing(null);
+    }
+  }
+
   async function importar() {
-    setSyncing(true);
+    setSyncing("pedidos");
     setSync(null);
     let data: SyncResult;
     try {
-      data = await chamar<SyncResult>("/api/integrations/shopee/sync-now", { days: 30 });
+      // 120 dias: a loja é nova e o histórico inteiro cabe nisso. A Shopee
+      // consulta 15 dias por chamada, então isto vira várias janelas
+      // retomadas pelo cursor a cada clique.
+      data = await chamar<SyncResult>("/api/integrations/shopee/sync-now", { days: 120 });
       setSync(data);
+      setTotalPedidos((n) => n + (data.ordersWritten ?? 0));
     } finally {
-      setSyncing(false);
+      setSyncing(null);
     }
     // O dashboard é server-rendered: sem isto, os pedidos recém-gravados só
     // apareceriam no próximo carregamento manual.
@@ -130,18 +151,29 @@ export function ShopeePreview() {
         <div>
           <p className="text-sm font-medium">Prévia dos pedidos da Shopee</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            <strong>Ver prévia</strong> puxa os últimos 15 dias e mostra o cálculo ao lado da resposta crua da Shopee,
-            sem gravar nada. <strong>Importar</strong> grava os últimos 30 dias no seu painel.
+            <strong>Ver prévia</strong> mostra o cálculo ao lado da resposta crua da Shopee, sem gravar nada.{" "}
+            <strong>Importar SKUs</strong> traz o catálogo para você cadastrar os custos.{" "}
+            <strong>Importar pedidos</strong> grava o histórico, em partes — clique quantas vezes for preciso.
           </p>
         </div>
-        <div className="flex shrink-0 gap-2">
-          <Button size="sm" variant="outline" onClick={run} disabled={loading || syncing} className="gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button size="sm" variant="outline" onClick={run} disabled={loading || syncing !== null} className="gap-2">
             <Eye className="h-4 w-4" />
             {loading ? "Consultando..." : "Ver prévia"}
           </Button>
-          <Button size="sm" onClick={importar} disabled={loading || syncing} className="gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={importarSkus}
+            disabled={loading || syncing !== null}
+            className="gap-2"
+          >
+            <Tags className="h-4 w-4" />
+            {syncing === "skus" ? "Buscando..." : "Importar SKUs"}
+          </Button>
+          <Button size="sm" onClick={importar} disabled={loading || syncing !== null} className="gap-2">
             <Download className="h-4 w-4" />
-            {syncing ? "Importando..." : "Importar pedidos"}
+            {syncing === "pedidos" ? "Importando..." : "Importar pedidos"}
           </Button>
         </div>
       </div>
@@ -156,10 +188,12 @@ export function ShopeePreview() {
       {sync?.ok && (
         <div className="space-y-1 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs">
           <p>
-            {sync.productsWritten} produto(s) e {sync.ordersWritten} pedido(s) gravados.{" "}
+            {sync.productsWritten !== undefined
+              ? `${sync.productsWritten} SKU(s) trazidos do catálogo.`
+              : `${sync.ordersWritten} pedido(s) gravados${totalPedidos > (sync.ordersWritten ?? 0) ? ` (${totalPedidos} nesta sessão)` : ""}.`}{" "}
             {sync.hasMore
-              ? "Ainda há pedidos na fila — clique em Importar de novo para continuar de onde parou."
-              : "Nada mais pendente nessa janela."}
+              ? "Ainda falta histórico — clique de novo para continuar de onde parou. Repita até esta mensagem sumir."
+              : "Histórico completo, nada mais pendente."}
           </p>
           {/* Sem custo cadastrado, o pedido entra com margem igual à receita.
               O painel marca isso como "sem custo", mas dizer aqui é o que

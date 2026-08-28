@@ -68,13 +68,13 @@ export async function ensureProductForOrderItem(
 ): Promise<string | null> {
   if (!sku.trim()) return null;
 
-  const existing = await prisma.product.findUnique({
+  // Um upsert com `update` vazio, não findUnique + create: é uma ida ao banco
+  // em vez de duas, e numa importação de dezenas de pedidos essas idas são o
+  // que decide se a requisição cabe no tempo da função.
+  const product = await prisma.product.upsert({
     where: { workspaceId_sku: { workspaceId, sku } },
+    update: {},
+    create: { workspaceId, sku, name: title || sku },
   });
-  if (existing) return existing.id;
-
-  const created = await prisma.product.create({
-    data: { workspaceId, sku, name: title || sku },
-  });
-  return created.id;
+  return product.id;
 }
