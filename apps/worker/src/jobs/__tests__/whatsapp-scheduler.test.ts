@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDailySummaryMessage, zonedTime } from "../whatsapp-scheduler.js";
+import { buildDailySummaryMessage, zonedTime } from "@mastershopee/shared";
 
 describe("buildDailySummaryMessage (§23 — resumo diário no WhatsApp)", () => {
   it("includes faturamento, lucro, margem, pedidos and ADS from the metric row", () => {

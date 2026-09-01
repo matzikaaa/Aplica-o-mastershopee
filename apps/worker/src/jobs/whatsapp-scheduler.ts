@@ -1,4 +1,9 @@
 import { prisma } from "@mastershopee/database";
+import {
+  buildDailySummaryMessage,
+  dailyReportParams,
+  zonedTime,
+} from "@mastershopee/shared";
 import { isWhatsappConfigured, sendWhatsappAlert, whatsappTemplates, WHATSAPP_NOT_CONFIGURED } from "../whatsapp.js";
 
 /**
@@ -88,56 +93,3 @@ export async function runWhatsappScheduler(): Promise<void> {
     }
   }
 }
-
-/**
- * Body variables for the `mastershopee_daily_report` template, in the order
- * it declares them. Kept beside the plain-text builder so the two can never
- * drift into saying different things about the same day.
- */
-export function dailyReportParams(
-  workspaceName: string,
-  metric: { grossRevenue: unknown; netProfit: unknown; orderCount: number; adSpend: unknown },
-): string[] {
-  const margin = Number(metric.grossRevenue) === 0 ? 0 : (Number(metric.netProfit) / Number(metric.grossRevenue)) * 100;
-  return [
-    workspaceName,
-    formatBRL(metric.grossRevenue),
-    formatBRL(metric.netProfit),
-    `${margin.toFixed(2)}%`,
-    String(metric.orderCount),
-    formatBRL(metric.adSpend),
-  ];
-}
-
-export function buildDailySummaryMessage(workspaceName: string, metric: { grossRevenue: unknown; netProfit: unknown; orderCount: number; adSpend: unknown }): string {
-  const margin = Number(metric.grossRevenue) === 0 ? 0 : (Number(metric.netProfit) / Number(metric.grossRevenue)) * 100;
-  return [
-    `Bom dia! 👋 Aqui está o resultado de ontem em ${workspaceName}:`,
-    `💰 Faturamento: ${formatBRL(metric.grossRevenue)}`,
-    `💵 Lucro líquido: ${formatBRL(metric.netProfit)}`,
-    `📈 Margem: ${margin.toFixed(2)}%`,
-    `📦 Pedidos: ${metric.orderCount}`,
-    `📢 ADS: ${formatBRL(metric.adSpend)}`,
-    `Acesse seu painel para ver os detalhes.`,
-  ].join("\n");
-}
-
-function formatBRL(value: unknown): string {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value));
-}
-
-export function zonedTime(timezone: string): Date {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date());
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "0";
-  return new Date(Number(get("year")), Number(get("month")) - 1, Number(get("day")), Number(get("hour")), Number(get("minute")), Number(get("second")));
-}
-

@@ -126,23 +126,52 @@ export function ShopeePreview() {
     }
   }
 
+  /**
+   * Puxa o histórico inteiro sozinho.
+   *
+   * A Shopee consulta 15 dias por chamada e cada requisição tem que caber no
+   * tempo da função serverless, então o histórico sai em pedaços — mas isso é
+   * problema da máquina, não do vendedor. O laço repete enquanto o servidor
+   * disser que ainda falta, mostrando o total acumulado.
+   *
+   * Duas travas para o laço não virar um moinho: um teto de rodadas, e parar
+   * na primeira rodada que não gravou nada e ainda assim diz haver mais — que
+   * é o formato de um cursor que não avança.
+   */
   async function importar() {
     setSyncing("pedidos");
     setSync(null);
-    let data: SyncResult;
+    setTotalPedidos(0);
+
+    const MAX_RODADAS = 40;
+    let acumulado = 0;
+    let semProgresso = 0;
+
     try {
-      // 120 dias: a loja é nova e o histórico inteiro cabe nisso. A Shopee
-      // consulta 15 dias por chamada, então isto vira várias janelas
-      // retomadas pelo cursor a cada clique.
-      data = await chamar<SyncResult>("/api/integrations/shopee/sync-now", { days: 120 });
-      setSync(data);
-      setTotalPedidos((n) => n + (data.ordersWritten ?? 0));
+      for (let rodada = 0; rodada < MAX_RODADAS; rodada++) {
+        // 120 dias cobrem o histórico desta loja; o cursor guarda a janela.
+        const data = await chamar<SyncResult>("/api/integrations/shopee/sync-now", { days: 120 });
+
+        acumulado += data.ordersWritten ?? 0;
+        setTotalPedidos(acumulado);
+        setSync({ ...data, ordersWritten: acumulado });
+
+        if (data.error || !data.hasMore) break;
+
+        if ((data.ordersWritten ?? 0) === 0) {
+          semProgresso++;
+          // Uma rodada vazia é normal: janela de 15 dias sem vendas. Três
+          // seguidas sem gravar nada é cursor travado, e insistir só gastaria
+          // chamadas à Shopee.
+          if (semProgresso >= 3) break;
+        } else {
+          semProgresso = 0;
+        }
+      }
+      router.refresh();
     } finally {
       setSyncing(null);
     }
-    // O dashboard é server-rendered: sem isto, os pedidos recém-gravados só
-    // apareceriam no próximo carregamento manual.
-    if (data.ok) router.refresh();
   }
 
   return (
@@ -153,7 +182,7 @@ export function ShopeePreview() {
           <p className="mt-0.5 text-xs text-muted-foreground">
             <strong>Ver prévia</strong> mostra o cálculo ao lado da resposta crua da Shopee, sem gravar nada.{" "}
             <strong>Importar SKUs</strong> traz o catálogo para você cadastrar os custos.{" "}
-            <strong>Importar pedidos</strong> grava o histórico, em partes — clique quantas vezes for preciso.
+            <strong>Importar histórico</strong> grava todos os pedidos, buscando sozinho até o fim.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -173,7 +202,9 @@ export function ShopeePreview() {
           </Button>
           <Button size="sm" onClick={importar} disabled={loading || syncing !== null} className="gap-2">
             <Download className="h-4 w-4" />
-            {syncing === "pedidos" ? "Importando..." : "Importar pedidos"}
+            {syncing === "pedidos"
+              ? `Importando${totalPedidos > 0 ? ` (${totalPedidos})` : ""}...`
+              : "Importar histórico"}
           </Button>
         </div>
       </div>
@@ -192,7 +223,7 @@ export function ShopeePreview() {
               ? `${sync.productsWritten} SKU(s) trazidos do catálogo.`
               : `${sync.ordersWritten} pedido(s) gravados${totalPedidos > (sync.ordersWritten ?? 0) ? ` (${totalPedidos} nesta sessão)` : ""}.`}{" "}
             {sync.hasMore
-              ? "Ainda falta histórico — clique de novo para continuar de onde parou. Repita até esta mensagem sumir."
+              ? "A importação parou antes do fim — clique de novo para retomar de onde parou."
               : "Histórico completo, nada mais pendente."}
           </p>
           {/* Sem custo cadastrado, o pedido entra com margem igual à receita.

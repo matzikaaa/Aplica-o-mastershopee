@@ -89,6 +89,7 @@ export function WhatsAppForm({
 }) {
   const { submit, loading } = useSimplePost("/api/settings/whatsapp", "WhatsApp configurado");
   const [testing, setTesting] = useState(false);
+  const [sendingReport, setSendingReport] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const router = useRouter();
 
@@ -111,6 +112,36 @@ export function WhatsAppForm({
     );
     router.refresh();
   }
+  /**
+   * Envia o relatório de ontem com os números reais.
+   *
+   * O teste de conexão manda zeros de propósito — ele prova que a mensagem
+   * sai, não que o conteúdo está certo. Só vendo o relatório de verdade dá
+   * para saber se o que chega às 8h faz sentido.
+   */
+  async function sendReport() {
+    setSendingReport(true);
+    setTestResult(null);
+    try {
+      const res = await fetch("/api/settings/whatsapp/send-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      setTestResult(
+        res.ok
+          ? { ok: true, message: `Relatório de ${data.date} enviado. Confira o celular.` }
+          : { ok: false, message: data.error ?? "Falha ao enviar o relatório." },
+      );
+    } catch (err) {
+      setTestResult({ ok: false, message: err instanceof Error ? err.message : "Falha de rede." });
+    } finally {
+      setSendingReport(false);
+      router.refresh();
+    }
+  }
+
   return (
     <form
       action={(fd) =>
@@ -143,8 +174,21 @@ export function WhatsAppForm({
         <Button type="submit" disabled={loading || disabled}>
           {loading ? "Salvando..." : "Salvar"}
         </Button>
-        <Button type="button" variant="outline" onClick={sendTest} disabled={testing || disabled || !phoneNumber}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={sendTest}
+          disabled={testing || sendingReport || disabled || !phoneNumber}
+        >
           {testing ? "Enviando..." : "Enviar mensagem de teste"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={sendReport}
+          disabled={testing || sendingReport || disabled || !phoneNumber}
+        >
+          {sendingReport ? "Enviando..." : "Enviar relatório de ontem"}
         </Button>
       </div>
 
