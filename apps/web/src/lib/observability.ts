@@ -1,9 +1,10 @@
 /**
- * Minimal error-reporting seam (§52). Structured JSON to stderr always;
- * forwards to Sentry when SENTRY_DSN is configured. Kept dependency-free
- * (no @sentry/nextjs import) since no DSN is available in this
- * environment — wiring a real Sentry SDK is a drop-in change here once
- * one is, without touching any of the call sites below.
+ * Ponto único de reporte de erro (§52).
+ *
+ * JSON estruturado no stderr sempre — é o que a Vercel guarda e o que
+ * funciona sem nenhuma configuração. Encaminha ao Sentry quando SENTRY_DSN
+ * existe, porque log de plataforma responde "o que aconteceu naquele
+ * minuto" e não responde "quantos clientes bateram nisso esta semana".
  */
 export function captureError(error: unknown, context?: Record<string, unknown>) {
   const message = error instanceof Error ? error.message : String(error);
@@ -21,8 +22,11 @@ export function captureError(error: unknown, context?: Record<string, unknown>) 
   );
 
   if (process.env.SENTRY_DSN) {
-    // TODO: once @sentry/nextjs is added as a dependency, replace this
-    // block with Sentry.captureException(error, { extra: context }).
-    console.error("[observability] SENTRY_DSN is set but @sentry/nextjs is not wired yet.");
+    // Import dinâmico e falha engolida de propósito: uma indisponibilidade do
+    // monitoramento não pode derrubar o caminho que ele observa. O log
+    // estruturado acima já saiu, então nada se perde por completo.
+    void import("@sentry/nextjs")
+      .then((Sentry) => Sentry.captureException(error, { extra: context }))
+      .catch(() => undefined);
   }
 }

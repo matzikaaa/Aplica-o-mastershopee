@@ -18,7 +18,9 @@
     "lint": "echo skip",
     "test": "echo skip",
     "verify:user": "tsx prisma/verify-user.ts",
-    "set:password": "tsx prisma/set-password.ts"
+    "set:password": "tsx prisma/set-password.ts",
+    "check:demo": "tsx prisma/check-demo.ts",
+    "backup": "bash prisma/backup.sh"
   },
   "dependencies": {
     "@prisma/client": "^5.18.0",

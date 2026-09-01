@@ -22,6 +22,8 @@
     "db:verify-user": "pnpm --filter @mastershopee/database verify:user",
     "db:set-password": "pnpm --filter @mastershopee/database set:password",
     "db:purge:demo": "pnpm --filter @mastershopee/database purge:demo",
+    "db:check:demo": "pnpm --filter @mastershopee/database check:demo",
+    "db:backup": "pnpm --filter @mastershopee/database backup",
     "db:studio": "pnpm --filter @mastershopee/database studio",
     "worker": "pnpm --filter @mastershopee/worker start"
   },

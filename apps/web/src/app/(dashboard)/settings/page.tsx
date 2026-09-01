@@ -4,10 +4,11 @@ import { getPlanPermissionService } from "@/lib/billing-context";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProfileForm, WorkspaceForm, WhatsAppForm, PasswordForm } from "@/components/settings/settings-forms";
+import { AccountDataSection } from "@/components/settings/account-data";
 import { Badge } from "@/components/ui/badge";
 
 export default async function SettingsPage() {
-  const { user, workspace } = await requireWorkspace();
+  const { user, workspace, role } = await requireWorkspace();
   const permissions = await getPlanPermissionService(workspace.id);
 
   const [members, whatsapp] = await Promise.all([
@@ -99,6 +100,8 @@ export default async function SettingsPage() {
                 <PasswordForm />
               </CardContent>
             </Card>
+
+            <AccountDataSection workspaceName={workspace.name} isOwner={role === "OWNER"} />
           </TabsContent>
         </div>
       </Tabs>

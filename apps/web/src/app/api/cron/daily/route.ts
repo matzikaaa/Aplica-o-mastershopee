@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@mastershopee/database";
+import {
+  prisma,
+  recomputeMetricsForDays,
+  resolveFreshCredentials,
+  upsertNormalizedOrder,
+} from "@mastershopee/database";
 import {
   isWhatsappConfigured,
   sendWhatsappAlert,
@@ -7,6 +12,8 @@ import {
   WHATSAPP_NOT_CONFIGURED,
 } from "@mastershopee/integrations";
 import { buildDailySummaryMessage, dailyReportParams, zonedTime } from "@mastershopee/shared";
+import { ShopeeProvider, decryptSecret, encryptSecret } from "@mastershopee/integrations";
+import { getIntegrationEnv } from "@/lib/integration-env";
 
 /**
  * A rotina diária, disparada pelo Cron da Vercel.
@@ -36,6 +43,10 @@ export async function GET(request: Request) {
   if (request.headers.get("authorization") !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "não autorizado" }, { status: 401 });
   }
+
+  // Sincroniza antes de relatar: um relatório montado sobre dados de
+  // anteontem diz um número errado com toda a confiança.
+  const sincronizacao = await sincronizarPedidos();
 
   const configs = await prisma.whatsappConfiguration.findMany({
     where: { dailyReportEnabled: true, verified: true },
@@ -123,5 +134,82 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, workspaces: configs.length, resultados });
+  return NextResponse.json({ ok: true, sincronizacao, workspaces: configs.length, resultados });
+}
+
+/**
+ * Sincronização incremental de todas as contas Shopee conectadas.
+ *
+ * Enquanto o worker não está hospedado, este é o único caminho automático
+ * para os pedidos entrarem — sem ele o vendedor teria que abrir o painel e
+ * clicar em "Importar" todo dia, o que não é sincronização.
+ *
+ * Incremental de propósito: retoma pelo cursor de cada conta e busca uma
+ * página por conta por execução. Puxar histórico é trabalho de quem clicou
+ * no botão, que pode acompanhar; aqui o objetivo é não deixar o dia de
+ * ontem faltando quando o relatório for montado.
+ */
+async function sincronizarPedidos() {
+  const contas = await prisma.marketplaceAccount.findMany({
+    where: { marketplace: "SHOPEE", status: { not: "DISCONNECTED" }, credential: { isNot: null } },
+  });
+
+  const env = getIntegrationEnv();
+  const resultado: { conta: string; pedidos: number; erro?: string }[] = [];
+
+  for (const conta of contas) {
+    const provider = new ShopeeProvider(
+      env.SHOPEE_PARTNER_ID ?? "",
+      env.SHOPEE_PARTNER_KEY ?? "",
+      env.SHOPEE_REDIRECT_URL ?? "",
+      env.SHOPEE_ENV ?? "live",
+      env.SHOPEE_KEY_ENCODING ?? "raw",
+    );
+
+    try {
+      const credentials = await resolveFreshCredentials({
+        accountId: conta.id,
+        externalShopId: conta.externalShopId,
+        provider,
+        encrypt: encryptSecret,
+        decrypt: decryptSecret,
+      });
+
+      const page = await provider.fetchOrders(
+        credentials,
+        { value: conta.lastSyncCursor },
+        conta.lastSyncAt ?? new Date(Date.now() - 3 * 24 * 3600 * 1000),
+      );
+
+      const dias = new Set<string>();
+      for (const pedido of page.items) {
+        await upsertNormalizedOrder(conta, pedido);
+        dias.add(pedido.orderedAt.toISOString().slice(0, 10));
+      }
+      if (dias.size > 0) await recomputeMetricsForDays(conta.workspaceId, [...dias]);
+
+      await prisma.marketplaceAccount.update({
+        where: { id: conta.id },
+        data: {
+          status: "CONNECTED",
+          lastSyncAt: new Date(),
+          lastSyncCursor: page.nextCursor.value,
+          lastErrorMessage: null,
+        },
+      });
+
+      resultado.push({ conta: conta.displayName, pedidos: page.items.length });
+    } catch (err) {
+      const erro = err instanceof Error ? err.message : "falha desconhecida";
+      await prisma.marketplaceAccount.update({
+        where: { id: conta.id },
+        data: { lastErrorMessage: erro },
+      });
+      // Uma conta com problema não pode impedir a sincronização das outras
+      // nem o envio dos relatórios de quem está bem.
+      resultado.push({ conta: conta.displayName, pedidos: 0, erro });
+    }
+  }
+
+  return resultado;
 }
