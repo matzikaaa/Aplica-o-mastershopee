@@ -52,6 +52,11 @@ export async function GET(request: Request) {
   if (!process.env.AUTH_SECRET && !process.env.NEXTAUTH_SECRET) {
     problems.push("AUTH_SECRET não configurado — sessões não podem ser assinadas.");
   }
+  if (!process.env.EMAIL_SERVER_HOST) {
+    problems.push(
+      "EMAIL_SERVER_HOST não configurado — verificação de conta e recuperação de senha não são entregues a ninguém.",
+    );
+  }
   const credentialsKey = describeCredentialsKey();
   if (credentialsKey !== "ok") {
     problems.push(
@@ -63,6 +68,7 @@ export async function GET(request: Request) {
     ok: problems.length === 0,
     problems,
     database,
+    email: process.env.EMAIL_SERVER_HOST ? "configurado" : "ausente",
     auth: {
       configuredUrl,
       requestOrigin,
@@ -77,6 +83,7 @@ export async function GET(request: Request) {
         ? `configurado (${process.env.SHOPEE_ENV ?? "live"}, chave lida como "${process.env.SHOPEE_KEY_ENCODING ?? "raw"}")`
         : "ausente",
       whatsapp: process.env.WHATSAPP_ACCESS_TOKEN ? "configurado" : "ausente",
+      cron: process.env.CRON_SECRET ? "configurado" : "ausente (relatório diário não dispara sozinho)",
     },
   };
 

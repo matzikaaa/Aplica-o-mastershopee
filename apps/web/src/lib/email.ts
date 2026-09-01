@@ -1,12 +1,30 @@
 import nodemailer from "nodemailer";
 
 /**
- * Transactional email (verification, password reset — §7). Sends via SMTP
- * when EMAIL_SERVER_* env vars are configured; otherwise falls back to
- * logging the link to the server console so local development and this
- * environment (no real SMTP credentials configured, §57) still work
- * end-to-end without a fake "email sent" success message.
+ * E-mail transacional (verificação de conta, recuperação de senha — §7).
+ *
+ * Sem SMTP configurado, o link ia para o console do servidor. Em
+ * desenvolvimento isso é o certo — não há caixa de entrada para conferir. Em
+ * produção é uma armadilha: o cadastro responde "enviamos um e-mail", ninguém
+ * recebe nada, e quem esquece a senha fica trancado para sempre sem que
+ * nenhum erro apareça em lugar nenhum.
+ *
+ * Então o fallback continua existindo, mas só fora de produção. Em produção,
+ * SMTP ausente é erro — quem chamou decide o que dizer ao usuário, e o
+ * cadastro deixa de prometer um e-mail que não existe.
  */
+export class EmailNotConfiguredError extends Error {
+  constructor() {
+    super(
+      "Envio de e-mail não configurado (EMAIL_SERVER_HOST). Sem isso, verificação de conta e recuperação de senha não chegam a ninguém.",
+    );
+    this.name = "EmailNotConfiguredError";
+  }
+}
+
+export function isEmailConfigured(): boolean {
+  return Boolean(process.env.EMAIL_SERVER_HOST);
+}
 function getTransport() {
   const host = process.env.EMAIL_SERVER_HOST;
   if (!host) return null;
@@ -22,6 +40,7 @@ function getTransport() {
 async function send(to: string, subject: string, html: string) {
   const transport = getTransport();
   if (!transport) {
+    if (process.env.NODE_ENV === "production") throw new EmailNotConfiguredError();
     // eslint-disable-next-line no-console
     console.log(`[email:dev-fallback] to=${to} subject="${subject}"\n${html}`);
     return;

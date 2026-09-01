@@ -3,6 +3,7 @@ import { requestPasswordResetSchema } from "@mastershopee/shared";
 import { prisma } from "@mastershopee/database";
 import { generateToken } from "@/lib/tokens";
 import { sendPasswordResetEmail } from "@/lib/email";
+import { captureError } from "@/lib/observability";
 import { getClientIp, isAllowed } from "@/lib/rate-limit";
 
 const GENERIC_RESPONSE = { message: "Se este e-mail existir, enviamos um link de redefinição de senha." };
@@ -28,8 +29,17 @@ export async function POST(request: Request) {
     data: { userId: user.id, tokenHash: hash, expiresAt: new Date(Date.now() + 3600 * 1000) },
   });
 
-  const resetUrl = `${process.env.APP_URL ?? "http://localhost:3000"}/reset-password?token=${raw}`;
-  await sendPasswordResetEmail(user.email, resetUrl);
+  const baseUrl = process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const resetUrl = `${baseUrl}/reset-password?token=${raw}`;
+
+  try {
+    await sendPasswordResetEmail(user.email, resetUrl);
+  } catch (err) {
+    // A resposta continua genérica mesmo aqui: distinguir "falhou o envio" de
+    // "e-mail não cadastrado" entrega ao atacante a lista de quem tem conta.
+    // O erro vai para o log, que é onde o operador precisa vê-lo.
+    captureError(err, { route: "auth.request-password-reset" });
+  }
 
   return NextResponse.json(GENERIC_RESPONSE);
 }

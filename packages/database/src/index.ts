@@ -48,6 +48,8 @@ export {
   type RecordMovementInput,
 } from "./stock";
 
+export { hitRateLimit, purgeExpiredRateLimits } from "./rate-limit";
+
 export {
   resolveFreshCredentials,
   MissingCredentialsError,

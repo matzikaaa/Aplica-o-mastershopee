@@ -5,6 +5,7 @@ import { PLAN_ORDER } from "@mastershopee/billing";
 import { hashPassword } from "@/lib/password";
 import { generateToken } from "@/lib/tokens";
 import { sendVerificationEmail } from "@/lib/email";
+import { captureError } from "@/lib/observability";
 import { getClientIp, isAllowed } from "@/lib/rate-limit";
 
 export async function POST(request: Request) {
@@ -40,8 +41,26 @@ export async function POST(request: Request) {
     data: { userId: user.id, tokenHash: hash, expiresAt: new Date(Date.now() + 24 * 3600 * 1000) },
   });
 
-  const verifyUrl = `${process.env.APP_URL ?? "http://localhost:3000"}/verify-email?token=${raw}`;
-  await sendVerificationEmail(user.email, user.name, verifyUrl);
+  // APP_URL antes de NEXTAUTH_URL, localhost por último: um link de
+  // verificação apontando para localhost em produção é indistinguível de um
+  // e-mail que não chegou, do ponto de vista de quem se cadastrou.
+  const baseUrl = process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const verifyUrl = `${baseUrl}/verify-email?token=${raw}`;
+
+  try {
+    await sendVerificationEmail(user.email, user.name, verifyUrl);
+  } catch (err) {
+    captureError(err, { route: "auth.register", userId: user.id });
+    // A conta existe, então "não foi possível criar" seria mentira. E dizer
+    // "confira seu e-mail" também: não há e-mail nenhum a conferir.
+    return NextResponse.json(
+      {
+        error:
+          "Sua conta foi criada, mas não foi possível enviar o e-mail de confirmação. Fale com o suporte para ativar o acesso.",
+      },
+      { status: 500 },
+    );
+  }
 
   await prisma.auditLog.create({
     data: { userId: user.id, action: "user.registered", entityType: "User", entityId: user.id },

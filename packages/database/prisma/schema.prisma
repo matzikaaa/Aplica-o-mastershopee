@@ -155,6 +155,11 @@ model Plan {
   description   String
   priceMonthly  Decimal  @db.Decimal(10, 2)
   priceYearly   Decimal  @db.Decimal(10, 2)
+  // IDs de preço do Stripe. O valor cobrado é o que está no Stripe, não o
+  // que está acima: os campos acima existem para a vitrine, e deixar a
+  // cobrança depender deles permitiria alterar o preço real editando o banco.
+  stripePriceIdMonthly String?
+  stripePriceIdYearly  String?
   // Structured limits/features consumed by @mastershopee/billing — never hardcode
   // plan checks elsewhere in the codebase.
   limits        Json
@@ -849,4 +854,36 @@ model AuditLog {
   createdAt   DateTime  @default(now())
 
   @@index([workspaceId, createdAt])
+}
+
+/// Contador de tentativas para o limitador, quando não há Redis.
+///
+/// O limitador falha aberto sem Redis, de propósito: uma indisponibilidade
+/// do limitador não pode derrubar o login. Só que "sem Redis" deixou de ser
+/// uma exceção — é a configuração padrão deste deploy — e aí falhar aberto
+/// virou "não existe limite", com força bruta livre na tela de login.
+///
+/// O banco já é dependência dura do login: se ele cair, não há autenticação
+/// para proteger. Então contar aqui não introduz um ponto de falha novo.
+model RateLimitCounter {
+  key       String   @id
+  count     Int      @default(0)
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+/// Eventos do Stripe já processados, para idempotência (§35, §87).
+///
+/// O Stripe reenvia a mesma entrega quando não recebe 2xx rápido o bastante,
+/// e reprocessar "assinatura cancelada" ou "pagamento falhou" duas vezes
+/// muda o acesso de um cliente pagante. A tabela WebhookEvent existente não
+/// serve: a coluna `marketplace` é o enum MarketplaceType, do qual Stripe não
+/// faz parte, e forçar um valor ali seria mentir sobre a origem do evento.
+model StripeEvent {
+  id          String   @id
+  type        String
+  processedAt DateTime @default(now())
+
+  @@index([processedAt])
 }
