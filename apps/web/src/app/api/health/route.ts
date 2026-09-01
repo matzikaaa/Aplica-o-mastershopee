@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { prisma } from "@mastershopee/database";
 import { getRedisUrl } from "@/lib/redis-url";
 
@@ -21,7 +23,22 @@ export const dynamic = "force-dynamic";
  * error code. No connection string, key or password passes through here.
  */
 export async function GET(request: Request) {
-  const requestOrigin = new URL(request.url).origin;
+  const url = new URL(request.url);
+
+  // O diagnóstico completo nomeia o host do banco e diz exatamente o que está
+  // e o que não está configurado. Isso é um mapa da infraestrutura, e enquanto
+  // a aplicação era só sua não custava nada; com clientes de terceiros, é
+  // reconhecimento de graça para quem estiver olhando.
+  //
+  // O sinal de vida continua público — é para isso que monitoramento externo
+  // serve, e ele não precisa saber de nada além de "está de pé".
+  const autorizado = await podeVerDetalhes(url);
+  if (!autorizado) {
+    const db = await checkDatabase();
+    return NextResponse.json({ ok: db.ok }, { status: db.ok ? 200 : 503 });
+  }
+
+  const requestOrigin = url.origin;
   const configuredUrl = process.env.NEXTAUTH_URL?.trim().replace(/\/$/, "") ?? null;
 
   const database = await checkDatabase();
@@ -102,6 +119,25 @@ function describeCredentialsKey(): string {
   if (!raw) return "ausente — impossível conectar marketplaces";
   const bytes = Buffer.from(raw, "base64").length;
   return bytes === 32 ? "ok" : `tamanho inválido: ${bytes} bytes, precisa 32`;
+}
+
+/**
+ * Sessão válida ou token. A sessão cobre o operador com o navegador aberto; o
+ * token cobre o terminal e o monitoramento, que não têm cookie. Reusa o
+ * CRON_SECRET em vez de inventar um segredo novo para o operador guardar.
+ */
+async function podeVerDetalhes(url: URL): Promise<boolean> {
+  const token = process.env.HEALTH_TOKEN ?? process.env.CRON_SECRET;
+  if (token && url.searchParams.get("token") === token) return true;
+
+  try {
+    const session = await getServerSession(authOptions);
+    return Boolean(session?.user);
+  } catch {
+    // Se a checagem de sessão falhar, o diagnóstico não sai — negar aqui é
+    // perder uma informação, e liberar é vazá-la.
+    return false;
+  }
 }
 
 interface DatabaseCheck {

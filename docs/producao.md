@@ -7,6 +7,11 @@ Ordem que importa: cada item abaixo bloqueia o seguinte de fazer sentido.
 Confira tudo de uma vez em `/api/health` — `problems` vazio significa que
 nenhum bloqueador de configuração restou.
 
+O diagnóstico completo exige estar logado, ou
+`?token=<CRON_SECRET>` para conferir pelo terminal. Sem isso a rota devolve
+só se a aplicação está de pé: o detalhe nomeia o host do banco e o que está
+configurado, que é mapa de infraestrutura para quem estiver olhando.
+
 | Variável | Para quê | Sem ela |
 |---|---|---|
 | `DATABASE_URL` | Neon, string **pooled** | Nada funciona |
