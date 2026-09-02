@@ -28,6 +28,10 @@ describe("previousPeriod (§48 — hoje x ontem comparisons)", () => {
   it("returns an equal-length window immediately preceding the given range", () => {
     const range = { from: new Date(2026, 0, 8), to: new Date(2026, 0, 14, 23, 59, 59, 999) };
     const prev = previousPeriod(range);
+    // `previousPeriod` devolve null para intervalo inválido; afirmar aqui é
+    // o que faz o teste falhar por isso em vez de por acesso a null.
+    expect(prev).not.toBeNull();
+    if (!prev) return;
     const rangeLengthMs = range.to.getTime() - range.from.getTime();
     const prevLengthMs = prev.to.getTime() - prev.from.getTime();
     expect(Math.round(prevLengthMs / 1000)).toBe(Math.round(rangeLengthMs / 1000));

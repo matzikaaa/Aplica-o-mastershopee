@@ -50,6 +50,8 @@ export {
 
 export { hitRateLimit, purgeExpiredRateLimits } from "./rate-limit";
 
+export { collectLowStock, markLowStockNotified, type LowStockItem } from "./low-stock";
+
 export {
   resolveFreshCredentials,
   MissingCredentialsError,

@@ -37,21 +37,76 @@ export function dailyReportParams(workspaceName: string, metric: DailyReportMetr
   ];
 }
 
+/** O que o vendedor precisa saber sobre estoque, na mesma mensagem. */
+export interface StockAlertLine {
+  productName: string;
+  sku: string;
+  quantity: number;
+  daysOfCover: number | null;
+  isOutOfStock: boolean;
+}
+
+/**
+ * Resumo de estoque em uma linha, para caber num parâmetro de template.
+ *
+ * A Meta recusa quebra de linha dentro de parâmetro, então a lista completa
+ * fica no corpo da mensagem de texto e aqui vai só o placar. "Tudo certo" é
+ * dito explicitamente: silêncio sobre estoque é indistinguível de uma
+ * verificação que não rodou.
+ */
+export function stockSummaryLine(itens: StockAlertLine[]): string {
+  if (itens.length === 0) return "Estoque: tudo certo";
+  const zerados = itens.filter((i) => i.isOutOfStock).length;
+  const partes = [`${itens.length} produto(s) para repor`];
+  if (zerados > 0) partes.push(`${zerados} zerado(s)`);
+  return `Estoque: ${partes.join(", ")}`;
+}
+
+/** Variáveis do template combinado (relatório + estoque), 7 parâmetros. */
+export function morningBriefParams(
+  workspaceName: string,
+  metric: DailyReportMetric,
+  itens: StockAlertLine[],
+): string[] {
+  return [...dailyReportParams(workspaceName, metric), stockSummaryLine(itens)];
+}
+
 export function buildDailySummaryMessage(
   workspaceName: string,
   metric: DailyReportMetric,
   /** Rótulo do período — "ontem" no agendado, uma data no envio manual. */
   periodo = "ontem",
+  /** Estoque na mesma mensagem: dois avisos pela manhã viram dois ruídos. */
+  itens: StockAlertLine[] = [],
 ): string {
-  return [
+  const linhas = [
     `Resultado de ${periodo} em ${workspaceName}:`,
     `💰 Faturamento: ${formatBRL(metric.grossRevenue)}`,
     `💵 Lucro líquido: ${formatBRL(metric.netProfit)}`,
     `📈 Margem: ${marginPercent(metric).toFixed(2)}%`,
     `📦 Pedidos: ${metric.orderCount}`,
     `📢 ADS: ${formatBRL(metric.adSpend)}`,
-    `Acesse seu painel para ver os detalhes.`,
-  ].join("\n");
+  ];
+
+  if (itens.length > 0) {
+    linhas.push("", "📉 Repor estoque:");
+    // Teto de cinco: a mensagem precisa caber numa tela de celular, e uma
+    // lista longa demais deixa de ser lida — o painel tem a lista inteira.
+    for (const item of itens.slice(0, 5)) {
+      const cobertura = item.isOutOfStock
+        ? "ZERADO"
+        : item.daysOfCover === null
+          ? "sem histórico de venda"
+          : `${item.daysOfCover.toFixed(0)} dias de cobertura`;
+      linhas.push(`• ${item.sku} — ${item.quantity} un, ${cobertura}`);
+    }
+    if (itens.length > 5) linhas.push(`• e mais ${itens.length - 5} produto(s)`);
+  } else {
+    linhas.push("", "📦 Estoque: nenhum produto precisa de reposição.");
+  }
+
+  linhas.push("", "Acesse seu painel para ver os detalhes.");
+  return linhas.join("\n");
 }
 
 /** Agora, no fuso do workspace — o relatório é do dia do vendedor, não do UTC. */

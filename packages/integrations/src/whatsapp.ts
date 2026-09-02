@@ -33,6 +33,16 @@ export function isWhatsappConfigured(): boolean {
 /** Names of the templates this app expects, overridable per deployment. */
 export const whatsappTemplates = {
   dailyReport: () => process.env.WHATSAPP_TEMPLATE_DAILY_REPORT ?? "",
+  /**
+   * Resumo da manhã: resultado do dia anterior **e** estoque, num template
+   * só. São 7 parâmetros — os 6 do relatório mais o placar de estoque.
+   *
+   * Existe separado de `dailyReport` porque template aprovado pela Meta tem
+   * número fixo de parâmetros: acrescentar o sétimo ao template existente
+   * exigiria reaprovação e quebraria quem já usa o de 6. Quando este não
+   * está configurado, o envio cai no de 6 e o estoque fica só no texto.
+   */
+  morningBrief: () => process.env.WHATSAPP_TEMPLATE_MORNING ?? "",
   lowStock: () => process.env.WHATSAPP_TEMPLATE_LOW_STOCK ?? "",
   language: () => process.env.WHATSAPP_TEMPLATE_LANGUAGE ?? "pt_BR",
 };

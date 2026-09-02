@@ -23,6 +23,7 @@ configurado, que é mapa de infraestrutura para quem estiver olhando.
 | `STRIPE_WEBHOOK_SECRET` | Confirmar pagamento | O plano nunca é ativado |
 | `CRON_SECRET` | Autenticar o cron | Relatório diário e sync não disparam |
 | `SHOPEE_*` | Integração | Sem dados de venda |
+| `WHATSAPP_TEMPLATE_MORNING` | Template com resultado **e** estoque (7 parâmetros) | Cai no template de 6, e o estoque some da mensagem |
 | `SENTRY_DSN` | Monitoramento (opcional) | Erro de cliente só aparece se ele reclamar |
 
 ## Stripe
@@ -47,9 +48,19 @@ fazia o cadastro prometer um e-mail que não existia.
 
 ## Cron
 
-`vercel.json` agenda `/api/cron/daily` às 11h UTC (8h de Brasília). Ele
-sincroniza os pedidos de todas as contas conectadas e envia os relatórios de
-quem já passou do horário configurado e ainda não recebeu hoje.
+`vercel.json` agenda `/api/cron/daily` às **09:30 UTC = 06:30 de Brasília**.
+Numa passada só ele: sincroniza os pedidos de todas as contas conectadas,
+verifica o estoque, e envia **uma** mensagem por workspace com o resultado do
+dia anterior e os produtos a repor.
+
+Estoque e resultado vão juntos de propósito: dois avisos na mesma manhã sobre
+a mesma operação viram dois ruídos, e o segundo passa a ser ignorado junto
+com o primeiro.
+
+Como só há um disparo por dia, o horário que o vendedor escolhe em
+Configurações funciona como "não me mande antes disso" — quem configurou
+07:00 recebe no dia seguinte, não às 07:00 do mesmo dia. Horários abaixo de
+06:30 recebem na hora do cron.
 
 No plano Hobby a Vercel permite **um disparo por dia**. Para sincronização
 mais frequente é preciso plano Pro, ou hospedar o worker.
@@ -66,8 +77,23 @@ E preencha os campos `[RAZÃO SOCIAL]`, `[CNPJ]`, `[ENDEREÇO]` e
 precisam de revisão por advogado** — descrevem corretamente o que o sistema
 faz, o que não é o mesmo que estarem juridicamente corretos.
 
+## Templates do WhatsApp
+
+A Meta exige template aprovado para mensagem que a empresa inicia, e o número
+de parâmetros é fixo no template. São dois:
+
+- `WHATSAPP_TEMPLATE_DAILY_REPORT` — 6 parâmetros: loja, faturamento, lucro,
+  margem, pedidos, ADS.
+- `WHATSAPP_TEMPLATE_MORNING` — os 6 acima **mais** o placar de estoque
+  (`"Estoque: 2 produto(s) para repor, 1 zerado(s)"`).
+
+O combinado é o usado pelo cron. Sem ele configurado o envio cai no de 6: o
+resultado chega igual, e o estoque fica no texto e na notificação do painel
+em vez de o envio falhar.
+
 ## O que continua dependendo do worker
 
-Alertas de estoque, reprocessamento de webhooks e sincronização de hora em
-hora. O cron cobre o relatório diário e uma sincronização por dia; o resto
-espera o worker ser hospedado (ver `docs/worker/deploy.md`).
+Reprocessamento de webhooks e sincronização de hora em hora. Alerta de
+estoque saiu da lista: passou para o resumo da manhã. O cron cobre uma
+sincronização por dia; o resto espera o worker ser hospedado (ver
+`docs/worker/deploy.md`).

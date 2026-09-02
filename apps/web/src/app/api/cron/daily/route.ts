@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import {
+  collectLowStock,
+  markLowStockNotified,
   prisma,
   recomputeMetricsForDays,
   resolveFreshCredentials,
@@ -11,7 +13,12 @@ import {
   whatsappTemplates,
   WHATSAPP_NOT_CONFIGURED,
 } from "@mastershopee/integrations";
-import { buildDailySummaryMessage, dailyReportParams, zonedTime } from "@mastershopee/shared";
+import {
+  buildDailySummaryMessage,
+  dailyReportParams,
+  morningBriefParams,
+  zonedTime,
+} from "@mastershopee/shared";
 import { ShopeeProvider, decryptSecret, encryptSecret } from "@mastershopee/integrations";
 import { getIntegrationEnv } from "@/lib/integration-env";
 
@@ -101,7 +108,11 @@ export async function GET(request: Request) {
       continue;
     }
 
-    const message = buildDailySummaryMessage(config.workspace.name, metric);
+    // Estoque na mesma mensagem, por pedido do operador: dois avisos na
+    // mesma manhã pela mesma operação viram dois ruídos, e o segundo passa a
+    // ser ignorado junto com o primeiro.
+    const estoque = await collectLowStock(config.workspaceId);
+    const message = buildDailySummaryMessage(config.workspace.name, metric, "ontem", estoque);
 
     if (!isWhatsappConfigured()) {
       await prisma.whatsappReport.update({
@@ -113,12 +124,39 @@ export async function GET(request: Request) {
     }
 
     try {
-      const { messageId, via } = await sendWhatsappAlert(
-        config.phoneNumber,
-        whatsappTemplates.dailyReport(),
-        dailyReportParams(config.workspace.name, metric),
-        message,
-      );
+      // O template combinado tem 7 parâmetros e leva o estoque junto. Sem
+      // ele configurado, cai no de 6: o resultado chega igual e o estoque
+      // fica no texto e na notificação do painel, em vez de o envio falhar.
+      const combinado = whatsappTemplates.morningBrief();
+      const { messageId, via } = combinado
+        ? await sendWhatsappAlert(
+            config.phoneNumber,
+            combinado,
+            morningBriefParams(config.workspace.name, metric, estoque),
+            message,
+          )
+        : await sendWhatsappAlert(
+            config.phoneNumber,
+            whatsappTemplates.dailyReport(),
+            dailyReportParams(config.workspace.name, metric),
+            message,
+          );
+
+      // Só depois de a mensagem sair: marcar antes faria um envio falho
+      // silenciar o aviso até a próxima reposição.
+      await markLowStockNotified(estoque.map((i) => i.stockItemId));
+
+      if (estoque.length > 0) {
+        await prisma.notification.create({
+          data: {
+            workspaceId: config.workspaceId,
+            title: `${estoque.length} produto(s) precisam de reposição`,
+            body: estoque
+              .map((i) => `${i.sku}: ${i.quantity} un${i.isOutOfStock ? " (ZERADO)" : ""}`)
+              .join("\n"),
+          },
+        });
+      }
       await prisma.whatsappReport.update({
         where: { id: report.id },
         data: { status: "sent", sentAt: new Date(), providerMessageId: messageId, payload: { message, via } },
