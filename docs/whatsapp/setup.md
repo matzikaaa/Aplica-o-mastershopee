@@ -37,13 +37,45 @@ dentro da janela.
 Anote: **Identificação do número de telefone** (`WHATSAPP_PHONE_NUMBER_ID`) e
 **Identificação da conta do WhatsApp Business** (`WHATSAPP_BUSINESS_ACCOUNT_ID`).
 
-## 2. Criar os dois templates
+## 2. Criar os templates
 
 Em **WhatsApp → Gerenciador do WhatsApp → Modelos de mensagem → Criar modelo**.
 
 Aprovação costuma sair em minutos para templates utilitários.
 
-### `mastershopee_daily_report`
+### `mastershopee_morning` — **é este que o cron usa**
+
+O resumo da manhã traz resultado e estoque na mesma mensagem. São 7
+variáveis: as 6 do resultado mais o placar de estoque.
+
+- Categoria: **Utilidade**
+- Idioma: **Português (BR)**
+- Corpo:
+
+```
+Resultado de ontem em {{1}}:
+
+Faturamento: {{2}}
+Lucro líquido: {{3}}
+Margem: {{4}}
+Pedidos: {{5}}
+ADS: {{6}}
+
+{{7}}
+```
+
+- Exemplos para aprovação: `Archi Store`, `R$ 1.234,56`, `R$ 312,45`,
+  `25,31%`, `48`, `R$ 120,00`, `Estoque: 2 produto(s) para repor, 1 zerado(s)`
+
+O sétimo parâmetro é uma linha só porque a Meta recusa quebra de linha
+dentro de variável. A lista dos produtos vai no corpo da mensagem de texto e
+na notificação do painel.
+
+### `mastershopee_daily_report` — opcional, 6 variáveis
+
+Só o resultado, sem estoque. É o que o botão "Enviar relatório de ontem" usa
+e a reserva do cron quando o de 7 não está configurado. Se você só vai usar o
+resumo da manhã, pode pular este.
 
 - Categoria: **Utilidade**
 - Idioma: **Português (BR)**
@@ -62,7 +94,11 @@ ADS: {{6}}
 - Exemplos para aprovação: `Archi Store`, `R$ 1.234,56`, `R$ 312,45`,
   `25,31%`, `48`, `R$ 120,00`
 
-### `mastershopee_low_stock`
+### `mastershopee_low_stock` — opcional
+
+Alerta de estoque isolado, por produto. Desde que estoque passou a viajar no
+resumo da manhã, este só é usado pelo worker, que não está hospedado. Pode
+pular enquanto for assim.
 
 - Categoria: **Utilidade**
 - Idioma: **Português (BR)**
@@ -101,12 +137,15 @@ O token da tela inicial expira em 24 horas. Para produção:
 WHATSAPP_PHONE_NUMBER_ID=<identificação do número>
 WHATSAPP_BUSINESS_ACCOUNT_ID=<identificação da conta>
 WHATSAPP_ACCESS_TOKEN=<token do usuário do sistema>
+WHATSAPP_TEMPLATE_MORNING=mastershopee_morning
 WHATSAPP_TEMPLATE_DAILY_REPORT=mastershopee_daily_report
 WHATSAPP_TEMPLATE_LOW_STOCK=mastershopee_low_stock
 WHATSAPP_TEMPLATE_LANGUAGE=pt_BR
+CRON_SECRET=<32 bytes em base64, o mesmo formato da chave de credenciais>
 ```
 
-Reinicie o servidor — variável de ambiente só é lida na inicialização.
+Na Vercel: **Settings → Environment Variables**, e **redeploy** — variável de
+ambiente só é lida na inicialização, então salvar sem redeploy não muda nada.
 
 ## 5. Verificar dentro do app
 
@@ -117,15 +156,32 @@ verdade. Enquanto não estiver verificada, **nenhum alerta é enviado** — nem 
 resumo diário nem o de estoque. Isso é proposital: um número salvo mas não
 testado é uma configuração que parece pronta e não entrega nada.
 
-## 6. Deixar o worker rodando
+## 6. Conferir o conteúdo antes de esperar a manhã
 
-Os alertas são disparados pelo worker, não pelo site:
+**Configurações → WhatsApp → Enviar relatório de ontem** manda o relatório
+com os números reais, pelo mesmo compositor que o cron usa. O "Enviar
+mensagem de teste" manda zeros de propósito: ele prova que a mensagem sai,
+não que o conteúdo está certo.
 
+## 7. O disparo automático
+
+Quem dispara é o Cron da Vercel, configurado em `apps/web/vercel.json` para
+**09:30 UTC = 06:30 de Brasília**. Numa passada só ele sincroniza os pedidos,
+verifica o estoque e envia a mensagem.
+
+Precisa de `CRON_SECRET` configurado — sem ele a rota recusa tudo, em vez de
+ficar aberta na internet disparando mensagens.
+
+Para testar sem esperar: **Vercel → Settings → Cron Jobs → Run** dispara na
+hora. Ou pelo terminal, com o mesmo segredo:
+
+```powershell
+curl -H "Authorization: Bearer $env:CRON_SECRET" https://SEU-DOMINIO/api/cron/daily
 ```
-pnpm dev:worker
-```
 
-Sem ele, nada é enviado, mesmo com tudo verificado.
+No plano Hobby a Vercel permite **um disparo por dia**. O horário que o
+vendedor escolhe em Configurações vira "não me mande antes disso": quem
+configurar 07:00 recebe no dia seguinte, não às 07:00 do mesmo dia.
 
 ---
 
