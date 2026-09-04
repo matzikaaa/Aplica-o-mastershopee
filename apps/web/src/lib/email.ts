@@ -63,3 +63,21 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string) {
     `<p>Recebemos um pedido para redefinir sua senha.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>Se você não pediu isso, ignore este e-mail. O link expira em 1 hora.</p>`,
   );
 }
+
+/**
+ * E-mail de conferência para o próprio operador.
+ *
+ * Deliberadamente passa pelo mesmo `send` dos e-mails reais: um caminho de
+ * teste próprio provaria que o caminho de teste funciona, que não é a
+ * pergunta.
+ */
+export async function sendTestEmail(to: string, name: string) {
+  await send(
+    to,
+    "Teste de envio — Mastershopee",
+    `<p>Olá, ${name}!</p>` +
+      `<p>Se você recebeu este e-mail, a entrega está funcionando: confirmação de cadastro e ` +
+      `recuperação de senha vão chegar aos seus clientes.</p>` +
+      `<p style="color:#666;font-size:12px">Enviado em ${new Date().toLocaleString("pt-BR")}.</p>`,
+  );
+}

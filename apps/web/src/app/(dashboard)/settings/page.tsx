@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProfileForm, WorkspaceForm, WhatsAppForm, PasswordForm } from "@/components/settings/settings-forms";
 import { AccountDataSection } from "@/components/settings/account-data";
+import { EmailTest } from "@/components/settings/email-test";
 import { Badge } from "@/components/ui/badge";
 
 export default async function SettingsPage() {
@@ -98,6 +99,15 @@ export default async function SettingsPage() {
               </CardHeader>
               <CardContent>
                 <PasswordForm />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Entrega de e-mail</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <EmailTest email={user.email} />
               </CardContent>
             </Card>
 
