@@ -20,3 +20,18 @@ export const revenueOrdersWhere = { status: { notIn: NON_REVENUE_ORDER_STATUSES 
 export function countsAsRevenue(status: OrderStatus): boolean {
   return !NON_REVENUE_ORDER_STATUSES.includes(status);
 }
+
+/**
+ * Itens de pedido cujo custo não é conhecido, para usar em `where`.
+ *
+ * Mesma regra de `costIsUnknown` em @mastershopee/shared, do lado do banco:
+ * nulo é "não sabemos", e zero também, porque importações anteriores gravavam
+ * zero nesse caso. A regra vive aqui, e não copiada em cada consulta, porque
+ * foi a cópia que deixou cinco lugares discordarem — e um deles era o
+ * recálculo, que por isso não corrigia nada.
+ */
+export function unknownCostWhere() {
+  // Função, não constante: o `where` do Prisma exige um array mutável, e um
+  // objeto compartilhado entre consultas convida a ser mutado por engano.
+  return { OR: [{ unitCostSnapshot: null }, { unitCostSnapshot: 0 }] };
+}

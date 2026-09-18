@@ -23,6 +23,7 @@ export {
   NON_REVENUE_ORDER_STATUSES,
   revenueOrdersWhere,
   countsAsRevenue,
+  unknownCostWhere,
 } from "./order-status";
 
 export {

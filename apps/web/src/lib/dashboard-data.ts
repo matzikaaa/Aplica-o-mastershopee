@@ -1,6 +1,6 @@
 import { prisma, revenueOrdersWhere } from "@mastershopee/database";
 import { financialEngine } from "@mastershopee/financial-engine";
-import type { DateRange } from "@mastershopee/shared";
+import { costIsUnknown, type DateRange } from "@mastershopee/shared";
 import type { MarketplaceType } from "@mastershopee/database";
 import Decimal from "decimal.js";
 
@@ -152,7 +152,7 @@ export async function getProductRanking(workspaceId: string, range: DateRange): 
       profit: new Decimal(0),
     };
     existing.units += item.quantity;
-    if (item.unitCostSnapshot === null) existing.unitsWithoutCost += item.quantity;
+    if (costIsUnknown(item.unitCostSnapshot)) existing.unitsWithoutCost += item.quantity;
     existing.revenue = existing.revenue.plus(result.grossRevenue.toDecimal());
     existing.profit = existing.profit.plus(result.netProfit.toDecimal());
     byProduct.set(item.productId!, existing);

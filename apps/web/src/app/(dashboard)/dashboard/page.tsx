@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AlertTriangle, TrendingDown, TrendingUp } from "lucide-react";
-import { prisma } from "@mastershopee/database";
+import { prisma, unknownCostWhere } from "@mastershopee/database";
 import { resolveDateRange, previousPeriod, type DateRangePreset, type MarketplaceType } from "@mastershopee/shared";
 import { financialEngine } from "@mastershopee/financial-engine";
 import { calculateOperationHealth } from "@mastershopee/financial-engine";
@@ -75,7 +75,7 @@ export default async function DashboardPage({
     prisma.orderItem.count({
       where: {
         productId: { not: null },
-        unitCostSnapshot: null,
+        ...unknownCostWhere(),
         order: { workspaceId: workspace.id, orderedAt: { gte: range.from, lte: range.to } },
       },
     }),

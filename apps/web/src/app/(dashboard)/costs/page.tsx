@@ -1,4 +1,4 @@
-import { prisma } from "@mastershopee/database";
+import { prisma, unknownCostWhere } from "@mastershopee/database";
 import { requireWorkspace } from "@/lib/session";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -48,7 +48,7 @@ export default async function CostsPage() {
   // This is the page the operator checks after seeing the dashboard warning,
   // so the same warning — and the same one-click fix — belongs here too.
   const itemsWithoutCost = await prisma.orderItem.count({
-    where: { productId: { not: null }, unitCostSnapshot: null, order: { workspaceId: workspace.id } },
+    where: { productId: { not: null }, ...unknownCostWhere(), order: { workspaceId: workspace.id } },
   });
 
   return (

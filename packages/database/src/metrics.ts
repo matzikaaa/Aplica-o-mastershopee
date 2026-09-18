@@ -2,7 +2,7 @@ import Decimal from "decimal.js";
 import { financialEngine } from "@mastershopee/financial-engine";
 import type { MarketplaceType } from "@prisma/client";
 import { prisma } from "./index";
-import { revenueOrdersWhere } from "./order-status";
+import { revenueOrdersWhere, unknownCostWhere } from "./order-status";
 
 export interface ComputeMetricsInput {
   workspaceId: string;
@@ -216,7 +216,7 @@ export async function backfillMissingCostSnapshots(productId: string): Promise<s
   if (costs.length === 0) return [];
 
   const items = await prisma.orderItem.findMany({
-    where: { productId, unitCostSnapshot: null },
+    where: { productId, ...unknownCostWhere() },
     select: { id: true, order: { select: { orderedAt: true } } },
   });
 

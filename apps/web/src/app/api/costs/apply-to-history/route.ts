@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { backfillMissingCostSnapshots, prisma, recomputeMetricsForDays } from "@mastershopee/database";
+import { backfillMissingCostSnapshots, prisma, recomputeMetricsForDays, unknownCostWhere } from "@mastershopee/database";
 import { requireWorkspace } from "@/lib/session";
 
 /**
@@ -56,7 +56,7 @@ export async function POST() {
   const daysRecomputed = await recomputeMetricsForDays(workspace.id, touchedDays);
 
   const stillMissing = await prisma.orderItem.count({
-    where: { order: { workspaceId: workspace.id }, unitCostSnapshot: null },
+    where: { order: { workspaceId: workspace.id }, ...unknownCostWhere },
   });
 
   await prisma.auditLog.create({

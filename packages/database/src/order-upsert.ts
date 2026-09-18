@@ -83,7 +83,7 @@ export async function resolveCostSnapshot(
   productId: string,
   orderedAt: Date,
   cache?: SyncCache,
-): Promise<Decimal> {
+): Promise<Decimal | null> {
   // Dia basta como chave: o custo é vigente por data, não por hora.
   const key = `${productId}:${orderedAt.toISOString().slice(0, 10)}`;
   const cached = cache?.costs.get(key);
@@ -93,8 +93,14 @@ export async function resolveCostSnapshot(
     where: { productId, effectiveFrom: { lte: orderedAt } },
     orderBy: { effectiveFrom: "desc" },
   });
-  const valor = cost ? new Decimal(cost.unitCost) : new Decimal(0);
-  cache?.costs.set(key, valor);
+
+  // Null, não zero. Zero significa "esta mercadoria não custou nada"; a
+  // ausência de custo cadastrado significa "não sabemos quanto custou", e as
+  // duas coisas levam a lucros diferentes. Gravar zero aqui fazia o pedido
+  // entrar com margem cheia e, pior, ficava invisível para o backfill — que
+  // procura por null — então cadastrar o custo depois não recalculava nada.
+  const valor = cost ? new Decimal(cost.unitCost) : null;
+  if (valor) cache?.costs.set(key, valor);
   return valor;
 }
 
@@ -148,7 +154,7 @@ export async function upsertNormalizedOrder(
       cache?.products.set(item.externalSku, productId);
     }
     const product = productId ? { id: productId } : null;
-    const unitCostSnapshot = product ? await resolveCostSnapshot(product.id, o.orderedAt, cache) : new Decimal(0);
+    const unitCostSnapshot = product ? await resolveCostSnapshot(product.id, o.orderedAt, cache) : null;
 
     const orderItemId = `${order.id}:${item.externalSku}:${item.externalVariationId ?? ""}`;
     await prisma.orderItem.upsert({
