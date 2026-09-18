@@ -52,7 +52,10 @@ function carregarEnv(): string | null {
 
   for (const caminho of candidatos) {
     if (!existsSync(caminho)) continue;
-    for (const linha of readFileSync(caminho, "utf8").split(/\r?\n/)) {
+    // `\ufeff`: o Bloco de Notas do Windows grava UTF-8 com BOM, e ele gruda
+    // no nome da primeira variável — que então nunca casa e some sem aviso.
+    const texto = readFileSync(caminho, "utf8").replace(/^\ufeff/, "");
+    for (const linha of texto.split(/\r?\n/)) {
       const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(linha);
       if (!m) continue;
       const chave = m[1]!;
@@ -98,16 +101,26 @@ async function main() {
   const arquivoEnv = carregarEnv();
   log(arquivoEnv ? `Configuração lida de ${arquivoEnv}` : "Usando apenas variáveis do ambiente");
 
-  const faltando = [
+  // Vazio e ausente são problemas diferentes e o conserto é diferente: uma
+  // linha em branco veio de um .env copiado do .env.example (a variável está
+  // lá, sem valor); ausente é linha que não existe. Dizer só "faltam" mandava
+  // criar de novo um arquivo que já estava criado.
+  const obrigatorias = [
     "DATABASE_URL",
     "CREDENTIALS_ENCRYPTION_KEY",
     "SHOPEE_PARTNER_ID",
     "SHOPEE_PARTNER_KEY",
-  ].filter((v) => !process.env[v]);
-  if (faltando.length > 0) {
+  ];
+  const problemas = obrigatorias
+    .filter((v) => !process.env[v])
+    .map((v) => (process.env[v] === undefined ? `  ${v} — não existe no arquivo` : `  ${v} — está no arquivo, mas sem valor`));
+
+  if (problemas.length > 0) {
     throw new ErroDeUso(
-      `Faltam variáveis de ambiente: ${faltando.join(", ")}.\n` +
-        "Copie os mesmos valores que estão na Vercel para um arquivo .env na raiz do projeto.",
+      `Faltam valores de configuração:\n${problemas.join("\n")}\n\n` +
+        `Arquivo lido: ${arquivoEnv ?? "(nenhum — só o ambiente)"}\n\n` +
+        "Pegue os valores na Vercel: Settings → Environment Variables → clique no olho de cada uma.\n" +
+        "A CREDENTIALS_ENCRYPTION_KEY precisa ser exatamente a mesma da Vercel — é ela que abre o token da loja já salvo no banco.",
     );
   }
 
