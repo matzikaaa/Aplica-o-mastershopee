@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "echo skip",
     "test": "vitest run",
-    "test:integration": "vitest run -c vitest.integration.config.ts"
+    "test:integration": "vitest run -c vitest.integration.config.ts",
+    "importar:shopee": "tsx src/scripts/importar-shopee.ts"
   },
   "dependencies": {
     "@mastershopee/database": "workspace:*",

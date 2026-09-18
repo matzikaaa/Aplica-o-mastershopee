@@ -25,7 +25,8 @@
     "db:check:demo": "pnpm --filter @mastershopee/database check:demo",
     "db:backup": "pnpm --filter @mastershopee/database backup",
     "db:studio": "pnpm --filter @mastershopee/database studio",
-    "worker": "pnpm --filter @mastershopee/worker start"
+    "worker": "pnpm --filter @mastershopee/worker start",
+    "importar:shopee": "pnpm --filter @mastershopee/worker importar:shopee"
   },
   "devDependencies": {
     "typescript": "^5.5.4",
