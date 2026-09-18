@@ -27,7 +27,7 @@ import {
   createSyncCache,
   recomputeMetricsForDays,
   resolveFreshCredentials,
-  unknownCostWhere,
+  countItemsWithUnknownCost,
   upsertMarketplaceProduct,
   upsertNormalizedOrder,
 } from "@mastershopee/database";
@@ -320,9 +320,7 @@ async function relatorio(conta: { id: string; workspaceId: string }) {
     }),
     prisma.product.count({ where: { workspaceId: conta.workspaceId } }),
     prisma.product.count({ where: { workspaceId: conta.workspaceId, costs: { none: {} } } }),
-    prisma.orderItem.count({
-      where: { order: { workspaceId: conta.workspaceId }, ...unknownCostWhere() },
-    }),
+    countItemsWithUnknownCost(conta.workspaceId),
   ]);
 
   console.log("");

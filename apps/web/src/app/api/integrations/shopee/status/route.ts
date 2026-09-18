@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma, unknownCostWhere } from "@mastershopee/database";
+import { countItemsWithUnknownCost, prisma } from "@mastershopee/database";
 import { requireWorkspace } from "@/lib/session";
 import { resolveShopeeAccount } from "@/lib/shopee-account";
 
@@ -34,9 +34,7 @@ export async function GET() {
     }),
     prisma.product.count({ where: { workspaceId: workspace.id } }),
     prisma.product.count({ where: { workspaceId: workspace.id, costs: { none: {} } } }),
-    prisma.orderItem.count({
-      where: { order: { workspaceId: workspace.id }, ...unknownCostWhere() },
-    }),
+    countItemsWithUnknownCost(workspace.id),
   ]);
 
   // O cursor guarda "epoch da janela | cursor da Shopee". Traduzido, ele diz

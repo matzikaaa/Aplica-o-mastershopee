@@ -1,4 +1,5 @@
 import type { OrderStatus } from "@prisma/client";
+import { prisma } from "./index";
 
 /**
  * Statuses that never represent money the seller keeps.
@@ -34,4 +35,23 @@ export function unknownCostWhere() {
   // Função, não constante: o `where` do Prisma exige um array mutável, e um
   // objeto compartilhado entre consultas convida a ser mutado por engano.
   return { OR: [{ unitCostSnapshot: null }, { unitCostSnapshot: 0 }] };
+}
+
+/**
+ * Quantos itens vendidos do workspace ainda estão sem custo conhecido.
+ *
+ * Existe porque a forma anterior — cada chamador montando o próprio `where` a
+ * partir de `unknownCostWhere` — tinha um jeito silencioso de dar errado:
+ * espalhar a *função* em vez do resultado (`...unknownCostWhere`, sem os
+ * parênteses) é TypeScript válido, não avisa nada, e produz um objeto vazio.
+ * O filtro some, a consulta passa a contar todos os itens vendidos, e o número
+ * exibido vira o oposto do que devia — "ainda faltam 800" logo depois de a
+ * correção ter funcionado.
+ *
+ * Com a contagem inteira aqui dentro não sobra `where` para montar errado.
+ */
+export async function countItemsWithUnknownCost(workspaceId: string): Promise<number> {
+  return prisma.orderItem.count({
+    where: { order: { workspaceId }, ...unknownCostWhere() },
+  });
 }

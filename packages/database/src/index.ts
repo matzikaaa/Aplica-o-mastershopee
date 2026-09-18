@@ -24,6 +24,7 @@ export {
   revenueOrdersWhere,
   countsAsRevenue,
   unknownCostWhere,
+  countItemsWithUnknownCost,
 } from "./order-status";
 
 export {
