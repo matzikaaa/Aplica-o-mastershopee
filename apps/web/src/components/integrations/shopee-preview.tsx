@@ -66,13 +66,38 @@ interface Situacao {
   status?: string;
   ultimoErro?: string | null;
   pedidos?: { total: number; maisAntigo: string | null; maisRecente: string | null };
-  proximaJanela?: string | null;
+  progresso?: {
+    fase: "dentro-da-janela" | "proxima-janela" | "concluido" | "desconhecido";
+    inicio: string | null;
+    fim: string | null;
+  };
   ultimaSincronizacao?: string | null;
   produtos?: { total: number; semCusto: number };
   itensSemCustoConhecido?: number;
 }
 
 const data = (v?: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "—");
+
+/**
+ * Onde a importação está — dita de um jeito que distingue avançar de travar.
+ *
+ * Mostrar só a data de início da janela fazia rodadas produtivas parecerem
+ * repetidas: uma janela de 15 dias com muitos pedidos leva várias rodadas, e a
+ * data não muda em nenhuma delas.
+ */
+function descreverProgresso(p: Situacao["progresso"]) {
+  if (!p) return "Nenhuma rodada registrada ainda.";
+  switch (p.fase) {
+    case "concluido":
+      return "Histórico completo — a próxima rodada só traz o que for novo.";
+    case "dentro-da-janela":
+      return `Percorrendo os pedidos de ${data(p.inicio)} a ${data(p.fim)} — ainda há páginas nesta faixa.`;
+    case "proxima-janela":
+      return `Próxima rodada abre a faixa de ${data(p.inicio)} a ${data(p.fim)}.`;
+    default:
+      return "Não foi possível ler o ponto de retomada; a próxima rodada recomeça a faixa.";
+  }
+}
 
 export function ShopeePreview() {
   const router = useRouter();
@@ -259,9 +284,7 @@ export function ShopeePreview() {
                 {situacao.pedidos?.total} pedido(s) gravados, de {data(situacao.pedidos?.maisAntigo)} a{" "}
                 {data(situacao.pedidos?.maisRecente)}.
               </p>
-              <p>
-                Próxima rodada continua a partir de <strong>{data(situacao.proximaJanela)}</strong>.
-              </p>
+              <p>{descreverProgresso(situacao.progresso)}</p>
               <p>
                 {situacao.produtos?.total} produto(s), {situacao.produtos?.semCusto} sem custo ·{" "}
                 {situacao.itensSemCustoConhecido} venda(s) com custo desconhecido.

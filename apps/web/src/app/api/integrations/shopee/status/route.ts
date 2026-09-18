@@ -37,10 +37,7 @@ export async function GET() {
     countItemsWithUnknownCost(workspace.id),
   ]);
 
-  // O cursor guarda "epoch da janela | cursor da Shopee". Traduzido, ele diz
-  // em que ponto do histórico a próxima rodada vai continuar.
-  const [janelaRaw] = (account.lastSyncCursor ?? "").split("|");
-  const janela = janelaRaw ? new Date(Number(janelaRaw) * 1000) : null;
+  const progresso = descreverProgresso(account.lastSyncCursor);
 
   return NextResponse.json({
     conta: account.displayName,
@@ -51,10 +48,41 @@ export async function GET() {
       maisAntigo: primeiro?.orderedAt ?? null,
       maisRecente: ultimo?.orderedAt ?? null,
     },
-    proximaJanela: janela,
+    progresso,
     cursorBruto: account.lastSyncCursor,
     ultimaSincronizacao: account.lastSyncAt,
     produtos: { total: produtos, semCusto },
     itensSemCustoConhecido: itensSemCusto,
   });
+}
+
+/** Mesma janela que o provedor usa: a Shopee só consulta 15 dias por chamada. */
+const JANELA_MS = 15 * 24 * 3600 * 1000;
+
+/**
+ * O que o cursor quer dizer, em português.
+ *
+ * O cursor é "epoch da janela | cursor da Shopee", e mostrar só a data da
+ * janela mentia por omissão: enquanto a importação pagina *dentro* de uma
+ * janela cheia, essa data não muda por rodadas seguidas. A tela repetia
+ * "continua a partir de 28/06" enquanto o total de pedidos subia de 252 para
+ * 603 — parado, para quem lia, e andando, de verdade. Já perdemos um dia
+ * confiando numa leitura assim; a parte do cursor que estava sendo ignorada é
+ * justamente a que prova o avanço.
+ */
+function descreverProgresso(cursor: string | null) {
+  if (!cursor) return { fase: "concluido" as const, inicio: null, fim: null };
+
+  const [janelaRaw, cursorInterno = ""] = cursor.split("|");
+  const inicioMs = janelaRaw ? Number(janelaRaw) * 1000 : NaN;
+  if (!Number.isFinite(inicioMs)) {
+    return { fase: "desconhecido" as const, inicio: null, fim: null };
+  }
+
+  const inicio = new Date(inicioMs);
+  const fim = new Date(Math.min(inicioMs + JANELA_MS, Date.now()));
+
+  // Cursor interno presente = ainda há páginas nesta janela. Ausente = a
+  // janela acabou e a próxima rodada abre a seguinte.
+  return { fase: cursorInterno ? ("dentro-da-janela" as const) : ("proxima-janela" as const), inicio, fim };
 }
