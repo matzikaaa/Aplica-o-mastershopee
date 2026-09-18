@@ -109,6 +109,18 @@ model Workspace {
   productSkuAliases   ProductSkuAlias[]
 
   onboardingCompletedAt DateTime?
+
+  // Resumo diário por e-mail.
+  //
+  // Existe porque o WhatsApp cobra caro em burocracia: número dedicado que
+  // sai do aplicativo, verificação de empresa e cartão cadastrado. E-mail
+  // entrega o mesmo resumo hoje, de graça, e serve ao vendedor que não vai
+  // montar uma conta na Meta só para receber um relatório.
+  dailyReportEmailEnabled Boolean   @default(false)
+  /// Nulo significa "manda para quem é dono do workspace".
+  dailyReportEmailTo      String?
+  /// Trava de envio único por dia, sem tabela extra só para isso.
+  lastDailyEmailAt        DateTime?
 }
 
 model WorkspaceMember {

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ProfileForm, WorkspaceForm, WhatsAppForm, PasswordForm } from "@/components/settings/settings-forms";
 import { AccountDataSection } from "@/components/settings/account-data";
 import { EmailTest } from "@/components/settings/email-test";
+import { DailyEmailForm } from "@/components/settings/daily-email-form";
 import { Badge } from "@/components/ui/badge";
 
 export default async function SettingsPage() {
@@ -75,7 +76,20 @@ export default async function SettingsPage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="whatsapp">
+          <TabsContent value="whatsapp" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Resumo diário por e-mail</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <DailyEmailForm
+                  enabled={workspace.dailyReportEmailEnabled}
+                  to={workspace.dailyReportEmailTo}
+                  ownerEmail={user.email}
+                />
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader>
                 <CardTitle>WhatsApp</CardTitle>

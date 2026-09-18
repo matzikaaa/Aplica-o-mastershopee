@@ -77,6 +77,20 @@ E preencha os campos `[RAZÃO SOCIAL]`, `[CNPJ]`, `[ENDEREÇO]` e
 precisam de revisão por advogado** — descrevem corretamente o que o sistema
 faz, o que não é o mesmo que estarem juridicamente corretos.
 
+## Resumo diário por e-mail
+
+Alternativa ao WhatsApp, e a única que funciona sem burocracia: o WhatsApp de
+produção exige número dedicado (que **sai do aplicativo** ao virar remetente
+da API), verificação de empresa e cartão cadastrado na Meta. Exigir isso de um
+vendedor só para ele receber o próprio relatório afasta a maioria.
+
+O e-mail entrega os mesmos números, do mesmo compositor, pelo mesmo cron das
+06:30. Ativa-se em **Configurações → WhatsApp → Resumo diário por e-mail**, e
+o endereço em branco manda para quem é dono do workspace.
+
+Quem tiver os dois canais recebe valores idênticos — é o mesmo
+`dailyReportParams` alimentando os dois.
+
 ## Templates do WhatsApp
 
 A Meta exige template aprovado para mensagem que a empresa inicia, e o número

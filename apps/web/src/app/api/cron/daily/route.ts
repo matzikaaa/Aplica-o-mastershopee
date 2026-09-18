@@ -21,6 +21,7 @@ import {
 } from "@mastershopee/shared";
 import { ShopeeProvider, decryptSecret, encryptSecret } from "@mastershopee/integrations";
 import { getIntegrationEnv } from "@/lib/integration-env";
+import { enviarResumoDiario } from "@/lib/daily-report-email";
 
 /**
  * A rotina diária, disparada pelo Cron da Vercel.
@@ -172,7 +173,65 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, sincronizacao, workspaces: configs.length, resultados });
+  const email = await enviarResumosPorEmail();
+
+  return NextResponse.json({
+    ok: true,
+    sincronizacao,
+    whatsapp: { workspaces: configs.length, resultados },
+    email,
+  });
+}
+
+/**
+ * Resumo diário por e-mail, para quem ativou.
+ *
+ * Canal independente do WhatsApp de propósito: montar uma conta na Meta
+ * exige número dedicado, verificação de empresa e cartão cadastrado, e não
+ * é razoável exigir isso de um vendedor só para ele receber o próprio
+ * relatório. Quem tiver os dois recebe os mesmos números — o compositor é o
+ * mesmo.
+ */
+async function enviarResumosPorEmail() {
+  const workspaces = await prisma.workspace.findMany({
+    where: { dailyReportEmailEnabled: true },
+    select: { id: true, name: true, timezone: true, lastDailyEmailAt: true },
+  });
+
+  const resultados: { workspace: string; status: string; detalhe?: string }[] = [];
+
+  for (const workspace of workspaces) {
+    const agora = zonedTime(workspace.timezone);
+    const inicioDoDia = new Date(agora);
+    inicioDoDia.setHours(0, 0, 0, 0);
+
+    if (workspace.lastDailyEmailAt && workspace.lastDailyEmailAt >= inicioDoDia) {
+      resultados.push({ workspace: workspace.name, status: "já enviado hoje" });
+      continue;
+    }
+
+    try {
+      const r = await enviarResumoDiario(workspace.id);
+      // Marca só depois do envio: marcar antes faria uma falha silenciar o
+      // resumo até o dia seguinte.
+      if (r.status === "enviado") {
+        await prisma.workspace.update({
+          where: { id: workspace.id },
+          data: { lastDailyEmailAt: new Date() },
+        });
+      }
+      resultados.push({ workspace: workspace.name, status: r.status, detalhe: r.detalhe });
+    } catch (err) {
+      // Um workspace com problema não pode impedir os outros de receber.
+      resultados.push({
+        workspace: workspace.name,
+        status: "falhou",
+        detalhe: err instanceof Error ? err.message : "erro",
+      });
+    }
+  }
+
+  return resultados;
 }
 
 /**
