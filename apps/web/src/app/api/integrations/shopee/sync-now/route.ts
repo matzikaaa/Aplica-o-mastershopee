@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   prisma,
   recomputeMetricsForDays,
+  createSyncCache,
   resolveFreshCredentials,
   upsertNormalizedOrder,
 } from "@mastershopee/database";
@@ -87,6 +88,10 @@ export async function POST(request: Request) {
   let cursor = { value: body.restart ? null : account.lastSyncCursor };
   const from = new Date(Date.now() - days * 24 * 3600 * 1000);
 
+  // Uma memória para a requisição inteira: o mesmo SKU aparece em dezenas de
+  // pedidos, e consultá-lo de novo a cada um era o que mais custava tempo.
+  const cache = createSyncCache();
+
   const startedAt = Date.now();
   let ordersWritten = 0;
   let ordersWithoutConfirmedFees = 0;
@@ -108,7 +113,7 @@ export async function POST(request: Request) {
           completou = false;
           break;
         }
-        await upsertNormalizedOrder(account, order);
+        await upsertNormalizedOrder(account, order, cache);
         ordersWritten++;
         if (order.feesFromEscrow === false) ordersWithoutConfirmedFees++;
         touchedDays.add(order.orderedAt.toISOString().slice(0, 10));

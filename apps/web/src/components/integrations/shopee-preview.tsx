@@ -53,6 +53,7 @@ interface SyncResult {
   ordersWritten?: number;
   ordersWithoutConfirmedFees?: number;
   hasMore?: boolean;
+  elapsedMs?: number;
 }
 
 type Etapa = "skus" | "pedidos";
@@ -144,6 +145,7 @@ export function ShopeePreview() {
     setTotalPedidos(0);
 
     const MAX_RODADAS = 40;
+    const comecou = Date.now();
     let acumulado = 0;
     let semProgresso = 0;
 
@@ -154,7 +156,9 @@ export function ShopeePreview() {
 
         acumulado += data.ordersWritten ?? 0;
         setTotalPedidos(acumulado);
-        setSync({ ...data, ordersWritten: acumulado });
+        // Tempo total medido no cliente, não somado dos lotes: é o que o
+        // vendedor de fato esperou.
+        setSync({ ...data, ordersWritten: acumulado, elapsedMs: Date.now() - comecou });
 
         if (data.error || !data.hasMore) break;
 
@@ -225,6 +229,7 @@ export function ShopeePreview() {
             {sync.hasMore
               ? "A importação parou antes do fim — clique de novo para retomar de onde parou."
               : "Histórico completo, nada mais pendente."}
+            {sync.elapsedMs ? ` (${(sync.elapsedMs / 1000).toFixed(0)}s)` : ""}
           </p>
           {/* Sem custo cadastrado, o pedido entra com margem igual à receita.
               O painel marca isso como "sem custo", mas dizer aqui é o que

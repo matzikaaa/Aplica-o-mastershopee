@@ -55,21 +55,53 @@ export interface UpsertOrderAccount {
 }
 
 /**
+ * Memória de uma rodada de sincronização.
+ *
+ * Um vendedor com 15 SKUs e 400 pedidos fazia 400 consultas de produto e 400
+ * de custo — quase todas repetindo a mesma pergunta, porque o mesmo SKU
+ * aparece em dezenas de pedidos. Cada ida ao Postgres da Vercel é uma ida e
+ * volta de rede, e é isso que fazia a importação estourar o tempo da função.
+ *
+ * O cache vive numa rodada só. Nada nele sobrevive à requisição, então não há
+ * o risco de servir um custo desatualizado depois que o vendedor o corrigir.
+ */
+export interface SyncCache {
+  products: Map<string, string | null>;
+  costs: Map<string, Decimal>;
+}
+
+export function createSyncCache(): SyncCache {
+  return { products: new Map(), costs: new Map() };
+}
+
+/**
  * Resolve o ProductCost vigente em `orderedAt` — nunca o custo atual (§16).
  * Produto sem histórico de custo devolve zero, que o dashboard mostra como
  * "sem custo" em vez de tratar como se fosse de graça (§96).
  */
-export async function resolveCostSnapshot(productId: string, orderedAt: Date): Promise<Decimal> {
+export async function resolveCostSnapshot(
+  productId: string,
+  orderedAt: Date,
+  cache?: SyncCache,
+): Promise<Decimal> {
+  // Dia basta como chave: o custo é vigente por data, não por hora.
+  const key = `${productId}:${orderedAt.toISOString().slice(0, 10)}`;
+  const cached = cache?.costs.get(key);
+  if (cached) return cached;
+
   const cost = await prisma.productCost.findFirst({
     where: { productId, effectiveFrom: { lte: orderedAt } },
     orderBy: { effectiveFrom: "desc" },
   });
-  return cost ? new Decimal(cost.unitCost) : new Decimal(0);
+  const valor = cost ? new Decimal(cost.unitCost) : new Decimal(0);
+  cache?.costs.set(key, valor);
+  return valor;
 }
 
 export async function upsertNormalizedOrder(
   account: UpsertOrderAccount,
   o: UpsertOrderInput,
+  cache?: SyncCache,
 ): Promise<void> {
   const money = {
     status: o.status as never,
@@ -110,9 +142,13 @@ export async function upsertNormalizedOrder(
     // catálogo sincronizado some: o pedido entra sem produto, sem custo, e
     // sem aparecer em lugar nenhum para o vendedor perceber que falta
     // preencher. O produto nasce sem custo, marcado como tal no painel.
-    const productId = await ensureProductForOrderItem(account.workspaceId, item.externalSku, item.title);
+    let productId = cache?.products.get(item.externalSku);
+    if (productId === undefined) {
+      productId = await ensureProductForOrderItem(account.workspaceId, item.externalSku, item.title);
+      cache?.products.set(item.externalSku, productId);
+    }
     const product = productId ? { id: productId } : null;
-    const unitCostSnapshot = product ? await resolveCostSnapshot(product.id, o.orderedAt) : new Decimal(0);
+    const unitCostSnapshot = product ? await resolveCostSnapshot(product.id, o.orderedAt, cache) : new Decimal(0);
 
     const orderItemId = `${order.id}:${item.externalSku}:${item.externalVariationId ?? ""}`;
     await prisma.orderItem.upsert({

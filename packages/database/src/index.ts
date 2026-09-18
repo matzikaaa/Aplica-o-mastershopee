@@ -68,6 +68,8 @@ export {
 export {
   upsertNormalizedOrder,
   resolveCostSnapshot,
+  createSyncCache,
+  type SyncCache,
   type UpsertOrderInput,
   type UpsertOrderItemInput,
   type UpsertOrderAccount,

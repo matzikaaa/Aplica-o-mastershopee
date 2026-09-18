@@ -693,7 +693,7 @@ export class ShopeeProvider implements MarketplaceProvider {
     const baseItems = base.item_list ?? [];
 
     // Uma chamada de variações por anúncio, pelo mesmo motivo do escrow.
-    const modelLists = await ShopeeProvider.mapLimited(baseItems, 5, async (item) => {
+    const modelLists = await ShopeeProvider.mapLimited(baseItems, 12, async (item) => {
       if (!item.has_model) return null;
       try {
         return await this.shopRequest<{
@@ -788,11 +788,11 @@ export class ShopeeProvider implements MarketplaceProvider {
     credentials: ProviderCredentials,
     cursor: SyncCursor,
     updatedAfter?: Date,
-    // Página menor de propósito. Cada pedido custa uma chamada de escrow mais
-    // um punhado de gravações; 50 de uma vez não cabem no tempo de uma função
-    // serverless, e o orçamento só é conferido entre páginas. Menor significa
-    // mais chances de gravar e salvar o cursor antes do corte.
-    pageSize = 20,
+    // 40 depois que as gravações deixaram de consultar o banco a cada item:
+    // o gargalo era a ida e volta por pedido, não o tamanho da página. O
+    // orçamento continua sendo conferido dentro do lote, então uma página
+    // grande demais não perde trabalho — só para no meio e retoma.
+    pageSize = 40,
   ): Promise<FetchPage<NormalizedOrder>> {
     const now = Math.floor(Date.now() / 1000);
 
@@ -842,7 +842,9 @@ export class ShopeeProvider implements MarketplaceProvider {
     );
 
     const orders = detail.order_list ?? [];
-    const escrows = await ShopeeProvider.mapLimited(orders, 5, (order) =>
+    // 12, não 5: o escrow é a parte mais lenta da página e o limite da Shopee
+    // é por minuto, não por simultaneidade. Cinco deixava a rede ociosa.
+    const escrows = await ShopeeProvider.mapLimited(orders, 12, (order) =>
       this.fetchEscrow(credentials, order.order_sn),
     );
     const items = orders.map((order, i) => normalizeShopeeOrder(order, escrows[i] ?? null));
