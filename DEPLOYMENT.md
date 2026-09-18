@@ -182,3 +182,75 @@ Há um `apps/worker/Dockerfile` pronto, construído a partir da raiz do
 repositório. O passo a passo para Railway, Render e Fly.io — com as variáveis
 necessárias e as armadilhas de cada um — está em
 [`docs/worker/deploy.md`](docs/worker/deploy.md).
+
+---
+
+## Deploy travado ou código velho no ar
+
+Um deploy que trava em **Initializing** não derruba o site: a Vercel continua
+servindo o deploy anterior, em silêncio. É a pior falha possível de depurar,
+porque o site responde normalmente — com o código antigo. Toda investigação
+começa por descobrir **qual commit está realmente no ar**.
+
+### 1. Qual commit está no ar
+
+Toda resposta do site carrega o cabeçalho `X-Mastershopee-Build` com os 7
+primeiros caracteres do commit. No PowerShell:
+
+```powershell
+(Invoke-WebRequest https://SEU-APP.vercel.app).Headers["X-Mastershopee-Build"]
+```
+
+Compare com o seu commit local:
+
+```powershell
+git rev-parse --short HEAD
+```
+
+Iguais → o código está publicado e o problema é outro. Diferentes → o deploy
+não subiu, e nenhum teste na interface vale nada até subir.
+
+Logado, `https://SEU-APP.vercel.app/api/health` mostra o mesmo em detalhe
+(`deploy.commit`, `deploy.branch`, `deploy.compiladoEm`), junto do diagnóstico
+de banco, autenticação e integrações.
+
+### 2. Destravar
+
+Na ordem — cada passo elimina uma causa:
+
+1. **Cancel** no deploy travado (menu `...`), depois **Redeploy**. Se voltar a
+   travar, não insista: repetir não muda nada.
+2. **Redeploy sem cache** — no diálogo de redeploy, desmarque *Use existing
+   Build Cache*. A restauração do cache acontece justamente na fase
+   "Initializing"; um cache corrompido trava exatamente aí, e essa é a única
+   causa de travamento nessa fase que está ao seu alcance.
+3. Confira https://www.vercel-status.com. Incidente aberto → é espera, não
+   configuração.
+
+### 3. Publicar sem passar pela fila da Vercel
+
+Se nada acima destravar, o deploy pode sair da sua máquina. O build roda
+localmente e sobe pronto — a fila de build da Vercel fica de fora do caminho:
+
+```powershell
+npx vercel@latest login
+npx vercel@latest link
+npx vercel@latest pull --environment=production
+npx vercel@latest build --prod
+npx vercel@latest deploy --prebuilt --prod
+```
+
+No `link`, escolha o projeto existente (não crie outro) e informe `apps/web`
+como diretório raiz quando perguntado. O `pull` traz as variáveis de ambiente
+de produção para um `.vercel/` local — que já está no `.gitignore`.
+
+Para ver o que um deploy travado está fazendo:
+
+```powershell
+npx vercel@latest inspect https://URL-DO-DEPLOY.vercel.app --logs
+```
+
+### 4. O que não depende de deploy nenhum
+
+Importar pedidos e SKUs não precisa da Vercel: `pnpm importar:shopee` fala
+direto com a Shopee e com o banco. Ver [docs/importar-shopee.md](docs/importar-shopee.md).

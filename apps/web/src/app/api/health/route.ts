@@ -84,6 +84,7 @@ export async function GET(request: Request) {
   const body = {
     ok: problems.length === 0,
     problems,
+    deploy: describeDeploy(),
     database,
     email: process.env.EMAIL_SERVER_HOST ? "configurado" : "ausente",
     auth: {
@@ -106,6 +107,38 @@ export async function GET(request: Request) {
 
   return NextResponse.json(body, { status: body.ok ? 200 : 503 });
 }
+
+/**
+ * Qual código está realmente no ar.
+ *
+ * Um deploy que trava em "Initializing" não avisa ninguém: o site continua
+ * respondendo — com o código anterior. Sem enxergar o commit, cada teste vira
+ * uma dúvida dupla ("não funcionou" ou "a correção nem subiu?"), e um dia
+ * inteiro se perde depurando um bug já corrigido que simplesmente não estava
+ * publicado.
+ *
+ * As variáveis são as do sistema da Vercel; fora dela, o campo sai nulo em vez
+ * de inventar um valor.
+ */
+function describeDeploy() {
+  const sha = process.env.VERCEL_GIT_COMMIT_SHA ?? null;
+  return {
+    commit: sha ? sha.slice(0, 7) : null,
+    branch: process.env.VERCEL_GIT_COMMIT_REF ?? null,
+    mensagem: process.env.VERCEL_GIT_COMMIT_MESSAGE?.split("\n")[0] ?? null,
+    ambiente: process.env.VERCEL_ENV ?? (process.env.VERCEL ? "desconhecido" : "fora da Vercel"),
+    regiao: process.env.VERCEL_REGION ?? null,
+    // Carimbado quando o bundle foi montado, não a cada requisição: é isso que
+    // separa "subiu agora" de "está no ar desde ontem".
+    compiladoEm: BUILD_TIME,
+  };
+}
+
+/**
+ * Avaliado uma vez, no build — o valor congela dentro do bundle. Em requisição
+ * seria sempre "agora" e não diria nada.
+ */
+const BUILD_TIME = new Date().toISOString();
 
 /**
  * Sem esta chave nenhum token de marketplace pode ser gravado: `encryptSecret`

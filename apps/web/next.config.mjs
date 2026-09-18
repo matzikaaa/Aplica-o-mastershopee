@@ -27,6 +27,16 @@ const contentSecurityPolicy = [
   "upgrade-insecure-requests",
 ].join("; ");
 
+// Qual commit este bundle carrega, congelado no build.
+//
+// Vai num cabeçalho de resposta de propósito: quando um deploy trava, o site
+// continua servindo o código anterior sem avisar ninguém, e a pergunta "a
+// correção subiu?" precisa de resposta antes do login — inclusive quando o
+// próprio login é o que está quebrado. São sete caracteres de hash de um
+// repositório privado: não abre nada, e poupa uma tarde de depurar um bug já
+// corrigido que nunca foi publicado.
+const buildId = (process.env.VERCEL_GIT_COMMIT_SHA ?? "local").slice(0, 7);
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
@@ -61,6 +71,7 @@ const nextConfig = {
       {
         source: "/:path*",
         headers: [
+          { key: "X-Mastershopee-Build", value: buildId },
           { key: "X-Frame-Options", value: "DENY" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
