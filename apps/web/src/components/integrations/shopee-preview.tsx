@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Download, Eye, Tags, TriangleAlert } from "lucide-react";
+import { Activity, Download, Eye, Tags, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -54,9 +54,25 @@ interface SyncResult {
   ordersWithoutConfirmedFees?: number;
   hasMore?: boolean;
   elapsedMs?: number;
+  cursor?: string | null;
+  paginas?: number;
 }
 
 type Etapa = "skus" | "pedidos";
+
+interface Situacao {
+  error?: string;
+  conta?: string;
+  status?: string;
+  ultimoErro?: string | null;
+  pedidos?: { total: number; maisAntigo: string | null; maisRecente: string | null };
+  proximaJanela?: string | null;
+  ultimaSincronizacao?: string | null;
+  produtos?: { total: number; semCusto: number };
+  itensSemCustoConhecido?: number;
+}
+
+const data = (v?: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "—");
 
 export function ShopeePreview() {
   const router = useRouter();
@@ -68,6 +84,18 @@ export function ShopeePreview() {
   // Acumulado entre cliques: cada requisição traz um pedaço, e o total é o
   // que responde "já acabou?".
   const [totalPedidos, setTotalPedidos] = useState(0);
+  const [situacao, setSituacao] = useState<Situacao | null>(null);
+  const [checando, setChecando] = useState(false);
+
+  async function verSituacao() {
+    setChecando(true);
+    try {
+      const res = await fetch("/api/integrations/shopee/status");
+      setSituacao((await res.json()) as Situacao);
+    } finally {
+      setChecando(false);
+    }
+  }
 
   /**
    * Toda chamada passa por aqui porque o modo de falhar é o mesmo: quando a
@@ -147,7 +175,7 @@ export function ShopeePreview() {
     const MAX_RODADAS = 40;
     const comecou = Date.now();
     let acumulado = 0;
-    let semProgresso = 0;
+    let cursorAnterior: string | null | undefined;
 
     try {
       for (let rodada = 0; rodada < MAX_RODADAS; rodada++) {
@@ -162,15 +190,12 @@ export function ShopeePreview() {
 
         if (data.error || !data.hasMore) break;
 
-        if ((data.ordersWritten ?? 0) === 0) {
-          semProgresso++;
-          // Uma rodada vazia é normal: janela de 15 dias sem vendas. Três
-          // seguidas sem gravar nada é cursor travado, e insistir só gastaria
-          // chamadas à Shopee.
-          if (semProgresso >= 3) break;
-        } else {
-          semProgresso = 0;
-        }
+        // Progresso é o cursor andar, não pedido ser gravado. Uma janela de 15
+        // dias sem vendas grava zero e ainda assim avançou — desistir nela
+        // parava a importação justamente no começo de uma loja nova, onde as
+        // primeiras janelas são vazias por definição.
+        if (cursorAnterior !== undefined && data.cursor === cursorAnterior) break;
+        cursorAnterior = data.cursor;
       }
       router.refresh();
     } finally {
@@ -204,6 +229,16 @@ export function ShopeePreview() {
             <Tags className="h-4 w-4" />
             {syncing === "skus" ? "Buscando..." : "Importar SKUs"}
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={verSituacao}
+            disabled={checando || syncing !== null}
+            className="gap-2"
+          >
+            <Activity className="h-4 w-4" />
+            {checando ? "Checando..." : "Situação"}
+          </Button>
           <Button size="sm" onClick={importar} disabled={loading || syncing !== null} className="gap-2">
             <Download className="h-4 w-4" />
             {syncing === "pedidos"
@@ -212,6 +247,30 @@ export function ShopeePreview() {
           </Button>
         </div>
       </div>
+
+      {situacao && (
+        <div className="space-y-1 rounded-lg bg-muted/40 px-3 py-2 text-xs">
+          {situacao.error ? (
+            <p className="text-destructive">{situacao.error}</p>
+          ) : (
+            <>
+              <p className="font-medium">Situação da importação</p>
+              <p>
+                {situacao.pedidos?.total} pedido(s) gravados, de {data(situacao.pedidos?.maisAntigo)} a{" "}
+                {data(situacao.pedidos?.maisRecente)}.
+              </p>
+              <p>
+                Próxima rodada continua a partir de <strong>{data(situacao.proximaJanela)}</strong>.
+              </p>
+              <p>
+                {situacao.produtos?.total} produto(s), {situacao.produtos?.semCusto} sem custo ·{" "}
+                {situacao.itensSemCustoConhecido} venda(s) com custo desconhecido.
+              </p>
+              {situacao.ultimoErro && <p className="text-destructive">Último erro: {situacao.ultimoErro}</p>}
+            </>
+          )}
+        </div>
+      )}
 
       {sync?.error && (
         <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs">

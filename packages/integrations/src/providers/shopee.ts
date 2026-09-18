@@ -788,11 +788,10 @@ export class ShopeeProvider implements MarketplaceProvider {
     credentials: ProviderCredentials,
     cursor: SyncCursor,
     updatedAfter?: Date,
-    // 40 depois que as gravações deixaram de consultar o banco a cada item:
-    // o gargalo era a ida e volta por pedido, não o tamanho da página. O
-    // orçamento continua sendo conferido dentro do lote, então uma página
-    // grande demais não perde trabalho — só para no meio e retoma.
-    pageSize = 40,
+    // 20, porque a página buscada é sempre gravada inteira: o orçamento de
+    // tempo decide se vale buscar a próxima, nunca se vale terminar esta.
+    // Página grande demais estouraria o teto da função no meio da gravação.
+    pageSize = 20,
   ): Promise<FetchPage<NormalizedOrder>> {
     const now = Math.floor(Date.now() / 1000);
 

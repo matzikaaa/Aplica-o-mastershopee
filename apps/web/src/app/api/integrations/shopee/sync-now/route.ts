@@ -32,7 +32,10 @@ export const maxDuration = 60;
 /** Margem para gravar cursor e métricas depois do último lote. */
 // Abaixo de maxDuration com folga: estourar o teto da plataforma mata a
 // função sem resposta, e aí o cursor do lote em andamento se perde.
-const BUDGET_MS = 40_000;
+// Menor que o teto da função com folga para terminar a página em andamento:
+// o orçamento decide se busca a próxima, e a que já está em mãos vai até o
+// fim de qualquer forma.
+const BUDGET_MS = 30_000;
 
 /**
  * Fatia do orçamento reservada ao catálogo. O objetivo do vendedor é ver os
@@ -94,6 +97,7 @@ export async function POST(request: Request) {
 
   const startedAt = Date.now();
   let ordersWritten = 0;
+  let paginas = 0;
   let ordersWithoutConfirmedFees = 0;
   let hasMore = true;
   const touchedDays = new Set<string>();
@@ -103,26 +107,27 @@ export async function POST(request: Request) {
     while (hasMore && Date.now() - startedAt < BUDGET_MS) {
       const page = await provider.fetchOrders(credentials, cursor, from);
 
-      let completou = true;
+      // A página buscada é sempre gravada inteira, mesmo estourando o
+      // orçamento.
+      //
+      // Parar no meio e não avançar o cursor criava um travamento: a próxima
+      // requisição buscava a mesma página, gastava o mesmo tempo, estourava no
+      // mesmo lugar e nunca avançava. Ficava em círculo indefinidamente — que
+      // é pior do que demorar, porque não termina nunca.
+      //
+      // O orçamento agora decide se vale buscar a PRÓXIMA página, nunca se
+      // vale terminar esta. Uma página sempre cabe: são 20 pedidos e o custo
+      // por pedido caiu com o cache.
       for (const order of page.items) {
-        if (Date.now() - startedAt > BUDGET_MS) {
-          // Estourou no meio da página: não avança o cursor. O próximo clique
-          // refaz esta página inteira, e refazer é inofensivo porque a
-          // gravação é idempotente — enquanto perder o cursor faria recomeçar
-          // do início de tudo.
-          completou = false;
-          break;
-        }
         await upsertNormalizedOrder(account, order, cache);
         ordersWritten++;
         if (order.feesFromEscrow === false) ordersWithoutConfirmedFees++;
         touchedDays.add(order.orderedAt.toISOString().slice(0, 10));
       }
 
-      if (!completou) break;
-
       cursor = page.nextCursor;
       hasMore = page.hasMore;
+      paginas++;
     }
   } catch (err) {
     // Grava o que já entrou antes de reportar: perder o cursor faria o
@@ -161,6 +166,11 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     productsWithoutCost,
+    // O cursor sai na resposta para o cliente saber se houve avanço. Contar
+    // pedidos gravados não serve: uma janela de 15 dias sem vendas grava zero
+    // e ainda assim avançou.
+    cursor: cursor.value,
+    paginas,
     ordersWritten,
     ordersWithoutConfirmedFees,
     hasMore,
