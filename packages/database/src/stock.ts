@@ -50,6 +50,26 @@ export async function recordStockMovement(input: RecordMovementInput): Promise<n
 
   if (signedDelta === 0) return null;
 
+  // Atalho para o movimento que já está no livro.
+  //
+  // A captura do P2002 abaixo já garante a corretude, mas ela só descobre a
+  // duplicata depois de abrir transação, fazer upsert do item e tentar o
+  // insert — quatro idas ao banco para concluir que não havia nada a fazer.
+  // Uma sincronização relê as mesmas janelas a cada rodada, então esse é o
+  // caminho comum, não a exceção: era ele que fazia reimportar uma página
+  // custar o mesmo que importá-la, e a página nunca cabia no tempo da função.
+  //
+  // Uma consulta barata resolve. A corrida continua coberta pelo P2002: duas
+  // sincronizações simultâneas podem passar as duas por aqui, e a segunda
+  // ainda esbarra no índice único.
+  if (input.orderItemId) {
+    const registrado = await prisma.stockMovement.findUnique({
+      where: { orderItemId: input.orderItemId },
+      select: { id: true },
+    });
+    if (registrado) return null;
+  }
+
   try {
     return await prisma.$transaction(async (tx) => {
       const item = await tx.stockItem.upsert({

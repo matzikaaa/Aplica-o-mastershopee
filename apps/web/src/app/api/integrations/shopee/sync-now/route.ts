@@ -29,13 +29,26 @@ import { getIntegrationEnv } from "@/lib/integration-env";
  */
 export const maxDuration = 60;
 
-/** Margem para gravar cursor e métricas depois do último lote. */
-// Abaixo de maxDuration com folga: estourar o teto da plataforma mata a
-// função sem resposta, e aí o cursor do lote em andamento se perde.
-// Menor que o teto da função com folga para terminar a página em andamento:
-// o orçamento decide se busca a próxima, e a que já está em mãos vai até o
-// fim de qualquer forma.
-const BUDGET_MS = 30_000;
+/**
+ * Teto de trabalho, abaixo do teto da função com folga para gravar cursor e
+ * métricas. Estourar `maxDuration` mata a função sem resposta e o cursor do
+ * lote em andamento se perde.
+ */
+const LIMITE_MS = 45_000;
+
+/**
+ * Pedidos por página — oito, não os vinte que o provedor usa por padrão.
+ *
+ * Cada item de pedido custa várias idas ao banco, então o tempo de uma página
+ * cresce com o tamanho dela. Vinte cabia quando a loja tinha poucos pedidos e
+ * deixou de caber: a página levava mais de 60 segundos, a função morria antes
+ * de gravar, o cursor não avançava e a tentativa seguinte repetia exatamente a
+ * mesma página. Travamento, não lentidão — e ele não passa com o tempo.
+ *
+ * Páginas menores fazem mais rodadas, e cada uma delas termina, grava e anda.
+ * Um pouco mais lento é infinitamente melhor do que nunca.
+ */
+const PEDIDOS_POR_PAGINA = 8;
 
 /**
  * Fatia do orçamento reservada ao catálogo. O objetivo do vendedor é ver os
@@ -98,14 +111,24 @@ export async function POST(request: Request) {
   const startedAt = Date.now();
   let ordersWritten = 0;
   let paginas = 0;
+  /** Quanto custou a última página, para decidir se a próxima cabe. */
+  let ultimaPaginaMs = 0;
   let ordersWithoutConfirmedFees = 0;
   let hasMore = true;
   const touchedDays = new Set<string>();
 
   try {
     // ── Pedidos ────────────────────────────────────────────────────────
-    while (hasMore && Date.now() - startedAt < BUDGET_MS) {
-      const page = await provider.fetchOrders(credentials, cursor, from);
+    while (hasMore) {
+      // Orçamento medido, não adivinhado: a página anterior é a melhor
+      // estimativa do que a próxima vai custar, e a latência do banco varia
+      // demais entre execuções para um número fixo servir. A primeira página
+      // sempre roda — sem uma medida, não há o que comparar.
+      const restante = LIMITE_MS - (Date.now() - startedAt);
+      if (paginas > 0 && ultimaPaginaMs * 1.25 > restante) break;
+
+      const inicioPagina = Date.now();
+      const page = await provider.fetchOrders(credentials, cursor, from, PEDIDOS_POR_PAGINA);
 
       // A página buscada é sempre gravada inteira, mesmo estourando o
       // orçamento.
@@ -128,6 +151,15 @@ export async function POST(request: Request) {
       cursor = page.nextCursor;
       hasMore = page.hasMore;
       paginas++;
+      ultimaPaginaMs = Date.now() - inicioPagina;
+
+      // Cursor gravado a cada página, não só no fim: a função pode ser morta
+      // pela plataforma a qualquer momento, e o que já foi lido não deve
+      // precisar ser lido de novo.
+      await prisma.marketplaceAccount.update({
+        where: { id: account.id },
+        data: { lastSyncCursor: cursor.value },
+      });
     }
   } catch (err) {
     // Grava o que já entrou antes de reportar: perder o cursor faria o
