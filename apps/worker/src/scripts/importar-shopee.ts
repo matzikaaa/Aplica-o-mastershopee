@@ -38,28 +38,49 @@ const aqui = dirname(fileURLToPath(import.meta.url));
 const raiz = resolve(aqui, "../../../..");
 
 /**
- * Lê o `.env` sem depender de pacote novo — e sem sobrescrever o que já veio
- * do ambiente, para que `DATABASE_URL=... pnpm importar:shopee` continue
- * mandando mais que o arquivo.
+ * Junta a configuração de todos os arquivos conhecidos, na ordem de prioridade.
+ *
+ * Lê vários, não só o primeiro que existir, e ignora valor vazio. Isso não é
+ * capricho: um `.env` nascido do `.env.example` tem as linhas certas e sem
+ * valor, e parar nele deixava a configuração completa de `vercel env pull`
+ * fora do alcance — com as duas na pasta e a importação recusando rodar.
+ *
+ * `vercel env pull` entra aqui de propósito. As três variáveis que faltavam
+ * são segredos de produção, e copiá-las à mão do painel é onde a coisa
+ * emperra; o comando as traz inteiras, sem ninguém digitar segredo nenhum.
+ *
+ * O ambiente sempre vence o arquivo, para `DATABASE_URL=... pnpm importar`
+ * continuar mandando mais.
  */
-function carregarEnv(): string | null {
+function carregarEnv(): string[] {
   const candidatos = [
     process.env.ENV_FILE,
     resolve(raiz, ".env"),
+    resolve(raiz, ".env.local"),
+    // Onde `vercel env pull` grava, conforme a versão e o nome pedido.
+    resolve(raiz, ".env.production.local"),
+    resolve(raiz, ".vercel/.env.production.local"),
     resolve(raiz, "apps/web/.env"),
     resolve(raiz, "apps/web/.env.local"),
+    resolve(raiz, "apps/web/.env.production.local"),
+    resolve(raiz, "apps/web/.vercel/.env.production.local"),
   ].filter((c): c is string => Boolean(c));
+
+  const lidos: string[] = [];
 
   for (const caminho of candidatos) {
     if (!existsSync(caminho)) continue;
     // `\ufeff`: o Bloco de Notas do Windows grava UTF-8 com BOM, e ele gruda
     // no nome da primeira variável — que então nunca casa e some sem aviso.
     const texto = readFileSync(caminho, "utf8").replace(/^\ufeff/, "");
+    let aproveitou = false;
+
     for (const linha of texto.split(/\r?\n/)) {
       const m = /^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(linha);
       if (!m) continue;
       const chave = m[1]!;
-      if (process.env[chave] !== undefined) continue;
+      if (process.env[chave]) continue;
+
       let valor = (m[2] ?? "").trim();
       if (
         (valor.startsWith('"') && valor.endsWith('"')) ||
@@ -67,11 +88,18 @@ function carregarEnv(): string | null {
       ) {
         valor = valor.slice(1, -1);
       }
+      // Linha sem valor não conta como configurada: é justamente a linha que
+      // o próximo arquivo precisa poder preencher.
+      if (!valor) continue;
+
       process.env[chave] = valor;
+      aproveitou = true;
     }
-    return caminho;
+
+    if (aproveitou) lidos.push(caminho);
   }
-  return null;
+
+  return lidos;
 }
 
 function arg(nome: string): string | undefined {
@@ -98,8 +126,12 @@ function log(mensagem: string) {
 class ErroDeUso extends Error {}
 
 async function main() {
-  const arquivoEnv = carregarEnv();
-  log(arquivoEnv ? `Configuração lida de ${arquivoEnv}` : "Usando apenas variáveis do ambiente");
+  const arquivosEnv = carregarEnv();
+  log(
+    arquivosEnv.length > 0
+      ? `Configuração lida de ${arquivosEnv.join(", ")}`
+      : "Usando apenas variáveis do ambiente",
+  );
 
   // Vazio e ausente são problemas diferentes e o conserto é diferente: uma
   // linha em branco veio de um .env copiado do .env.example (a variável está
@@ -115,11 +147,29 @@ async function main() {
     .filter((v) => !process.env[v])
     .map((v) => (process.env[v] === undefined ? `  ${v} — não existe no arquivo` : `  ${v} — está no arquivo, mas sem valor`));
 
+  // A chave de cifra falha tarde e feio: o script conecta, acha a loja e só
+  // então não consegue abrir o token — com uma mensagem sobre criptografia que
+  // não aponta para o .env. Estes dois casos são os que acontecem de verdade:
+  // o texto de exemplo copiado como se fosse valor, e uma chave de tamanho
+  // errado, que parece configurada e não serve.
+  const chave = process.env.CREDENTIALS_ENCRYPTION_KEY;
+  if (chave === "generate-a-real-32-byte-base64-key") {
+    problemas.push("  CREDENTIALS_ENCRYPTION_KEY — está com o texto de exemplo, não com a chave real");
+  } else if (chave && Buffer.from(chave, "base64").length !== 32) {
+    problemas.push(
+      `  CREDENTIALS_ENCRYPTION_KEY — tem ${Buffer.from(chave, "base64").length} bytes, precisa de 32 (copie a da Vercel)`,
+    );
+  }
+
   if (problemas.length > 0) {
     throw new ErroDeUso(
       `Faltam valores de configuração:\n${problemas.join("\n")}\n\n` +
-        `Arquivo lido: ${arquivoEnv ?? "(nenhum — só o ambiente)"}\n\n` +
-        "Pegue os valores na Vercel: Settings → Environment Variables → clique no olho de cada uma.\n" +
+        `Arquivos lidos: ${arquivosEnv.length > 0 ? arquivosEnv.join(", ") : "(nenhum — só o ambiente)"}\n\n` +
+        "O jeito curto, sem copiar segredo nenhum à mão — na raiz do projeto:\n" +
+        "  npx vercel@latest link\n" +
+        "  npx vercel@latest env pull .env.production.local\n" +
+        "  pnpm importar:shopee\n\n" +
+        "À mão, se preferir: Vercel → Settings → Environment Variables → olho de cada uma.\n" +
         "A CREDENTIALS_ENCRYPTION_KEY precisa ser exatamente a mesma da Vercel — é ela que abre o token da loja já salvo no banco.",
     );
   }

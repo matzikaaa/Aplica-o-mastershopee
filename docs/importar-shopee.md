@@ -27,11 +27,24 @@ git pull origin claude/saas-marketplace-finance-2r3hk0
 pnpm install
 ```
 
-## 2. Criar o arquivo `.env` na raiz
+## 2. A configuração
 
-Copie os valores **da própria Vercel** (Settings → Environment Variables →
-ícone de olho em cada uma). O arquivo `.env` está no `.gitignore`, então ele
-não vai para o Git.
+### O jeito curto (recomendado — não digita segredo nenhum)
+
+A própria Vercel entrega as variáveis de produção prontas:
+
+```powershell
+npx vercel@latest link
+npx vercel@latest env pull .env.production.local
+```
+
+No `link`, escolha o projeto **existente** e informe `apps/web` como diretório
+raiz. Pronto — o arquivo gerado já está no `.gitignore`.
+
+### À mão
+
+Se preferir, crie um `.env` na raiz com estas seis linhas, pegando os valores
+em **Vercel → Settings → Environment Variables → olho de cada uma**:
 
 ```
 DATABASE_URL="...?sslmode=require"
@@ -42,9 +55,13 @@ SHOPEE_ENV=live
 SHOPEE_KEY_ENCODING=raw
 ```
 
-São essas seis. `CREDENTIALS_ENCRYPTION_KEY` precisa ser **exatamente** a
-mesma da Vercel — é ela que abre o token da loja que já está salvo no banco.
-Com outra chave, o script não consegue decifrar o token e para dizendo isso.
+`CREDENTIALS_ENCRYPTION_KEY` precisa ser **exatamente** a mesma da Vercel — é
+ela que abre o token da loja já salvo no banco. O script confere o tamanho e
+recusa o texto de exemplo antes de começar, em vez de falhar no meio.
+
+> Os dois jeitos convivem: o script lê todos os arquivos que encontrar e
+> ignora linha sem valor. Um `.env` copiado do `.env.example`, com as linhas
+> certas e vazias, é completado pelo arquivo que veio da Vercel.
 
 ## 3. Rodar
 
@@ -94,7 +111,7 @@ página, e rodar de novo continua exatamente de onde parou.
 
 | Mensagem | O que significa |
 | --- | --- |
-| `Faltam variáveis de ambiente: ...` | O `.env` não foi criado na raiz, ou faltou alguma linha |
+| `Faltam valores de configuração: ...` | A mensagem diz, de cada uma, se a linha não existe ou está sem valor |
 | `Não foi possível conectar ao banco` | `DATABASE_URL` errado ou sem `?sslmode=require` |
 | `Nenhuma conta Shopee conectada neste banco` | O `DATABASE_URL` aponta para outro banco (ex.: o local, não o da Neon) |
 | `está sem token salvo` | A autorização não foi concluída — reconecte a loja em Integrações |
