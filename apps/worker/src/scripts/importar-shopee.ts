@@ -161,13 +161,26 @@ async function main() {
     .filter((v) => !process.env[v])
     .map((v) => (process.env[v] === undefined ? `  ${v} — não existe no arquivo` : `  ${v} — está no arquivo, mas sem valor`));
 
+  // `[SENSITIVE]`: o que `vercel env pull` grava no lugar de uma variável
+  // marcada como Sensitive, porque o valor dela não pode ser lido de volta.
+  // O arquivo vem completo, com todos os nomes presentes, e só o conteúdo que
+  // importa é placeholder — então a configuração parece pronta e falha
+  // adiante, em erro de assinatura ou de decifragem, longe da causa.
+  const placeholders = obrigatorias.filter((v) => process.env[v] === "[SENSITIVE]");
+  for (const v of placeholders) {
+    problemas.push(`  ${v} — veio como [SENSITIVE]: a Vercel não devolve o valor de variável marcada como Sensitive`);
+  }
+
   // A chave de cifra falha tarde e feio: o script conecta, acha a loja e só
   // então não consegue abrir o token — com uma mensagem sobre criptografia que
   // não aponta para o .env. Estes dois casos são os que acontecem de verdade:
   // o texto de exemplo copiado como se fosse valor, e uma chave de tamanho
   // errado, que parece configurada e não serve.
   const chave = process.env.CREDENTIALS_ENCRYPTION_KEY;
-  if (chave === "generate-a-real-32-byte-base64-key") {
+  if (chave === "[SENSITIVE]") {
+    // Já relatado acima, com a explicação certa; medir os bytes de um
+    // placeholder só acrescentaria um número sem sentido.
+  } else if (chave === "generate-a-real-32-byte-base64-key") {
     problemas.push("  CREDENTIALS_ENCRYPTION_KEY — está com o texto de exemplo, não com a chave real");
   } else if (chave && Buffer.from(chave, "base64").length !== 32) {
     problemas.push(
@@ -185,6 +198,12 @@ async function main() {
         "  pnpm importar:shopee\n\n" +
         "A flag --environment=production não é opcional: sem ela o comando baixa o\n" +
         "ambiente de desenvolvimento, que costuma estar vazio, e grava um arquivo sem nada.\n\n" +
+        "Se o pull disse \"Secret values cannot be pulled\", essas variáveis ficaram como\n" +
+        "[SENSITIVE] e precisam vir de outro lugar — um .env na raiz tem prioridade sobre\n" +
+        "o arquivo puxado, então basta escrever nele só as que faltam:\n" +
+        "  DATABASE_URL             → painel do Neon\n" +
+        "  SHOPEE_PARTNER_ID/KEY    → console da Shopee Open Platform\n" +
+        "  CREDENTIALS_ENCRYPTION_KEY → onde você guardou ao configurar; a Vercel não a devolve\n\n" +
         "À mão, se preferir: Vercel → Settings → Environment Variables → olho de cada uma.\n" +
         "A CREDENTIALS_ENCRYPTION_KEY precisa ser exatamente a mesma da Vercel — é ela que abre o token da loja já salvo no banco.",
     );

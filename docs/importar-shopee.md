@@ -47,6 +47,23 @@ raiz. Pronto — o arquivo gerado já está no `.gitignore`.
 > linha que ele imprime — tem que dizer `Downloading \`production\`
 > environment variables`.
 
+> **Variáveis marcadas como Sensitive não voltam.** Se o pull terminar com
+> *"Secret values cannot be pulled"*, essas vieram como `[SENSITIVE]` — nome
+> presente, valor não. O arquivo parece completo e falha adiante, em erro de
+> assinatura ou de decifragem. Complete só essas num `.env` na raiz, que tem
+> prioridade sobre o arquivo puxado:
+>
+> | Variável | Onde conseguir de novo |
+> | --- | --- |
+> | `DATABASE_URL` | painel do Neon |
+> | `SHOPEE_PARTNER_ID` / `SHOPEE_PARTNER_KEY` | console da Shopee Open Platform |
+> | `CREDENTIALS_ENCRYPTION_KEY` | onde você guardou ao configurar — a Vercel não devolve |
+>
+> Perdeu a `CREDENTIALS_ENCRYPTION_KEY`? Ela é o que decifra os tokens de
+> marketplace já salvos. Sem ela, o jeito é gerar outra, gravar na Vercel e
+> **reconectar as lojas** — os tokens antigos ficam ilegíveis. Não faça isso
+> sem necessidade.
+
 ### À mão
 
 Se preferir, crie um `.env` na raiz com estas seis linhas, pegando os valores
