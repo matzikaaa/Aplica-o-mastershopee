@@ -35,11 +35,17 @@ A própria Vercel entrega as variáveis de produção prontas:
 
 ```powershell
 npx vercel@latest link
-npx vercel@latest env pull .env.production.local
+npx vercel@latest env pull .env.production.local --environment=production
 ```
 
 No `link`, escolha o projeto **existente** e informe `apps/web` como diretório
 raiz. Pronto — o arquivo gerado já está no `.gitignore`.
+
+> **`--environment=production` não é opcional.** O nome do arquivo não escolhe
+> o ambiente: sem a flag o comando baixa o `development`, que costuma estar
+> vazio, grava um arquivo sem nada e diz "Created" do mesmo jeito. Confira a
+> linha que ele imprime — tem que dizer `Downloading \`production\`
+> environment variables`.
 
 ### À mão
 

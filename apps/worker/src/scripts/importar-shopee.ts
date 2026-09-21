@@ -52,7 +52,13 @@ const raiz = resolve(aqui, "../../../..");
  * O ambiente sempre vence o arquivo, para `DATABASE_URL=... pnpm importar`
  * continuar mandando mais.
  */
-function carregarEnv(): string[] {
+interface ArquivoLido {
+  caminho: string;
+  /** Se alguma variável ainda não definida veio daqui. */
+  aproveitado: boolean;
+}
+
+function carregarEnv(): ArquivoLido[] {
   const candidatos = [
     process.env.ENV_FILE,
     resolve(raiz, ".env"),
@@ -66,7 +72,7 @@ function carregarEnv(): string[] {
     resolve(raiz, "apps/web/.vercel/.env.production.local"),
   ].filter((c): c is string => Boolean(c));
 
-  const lidos: string[] = [];
+  const lidos: ArquivoLido[] = [];
 
   for (const caminho of candidatos) {
     if (!existsSync(caminho)) continue;
@@ -96,10 +102,22 @@ function carregarEnv(): string[] {
       aproveitou = true;
     }
 
-    if (aproveitou) lidos.push(caminho);
+    // Entram na lista também os que não contribuíram nada. Um arquivo que
+    // existe e está vazio é informação: foi o caso do `vercel env pull` sem
+    // `--environment=production`, que baixa o ambiente de desenvolvimento e
+    // grava um arquivo sem nada dentro. Listar só os aproveitados escondia
+    // justamente o arquivo que explicava a falha.
+    lidos.push({ caminho, aproveitado: aproveitou });
   }
 
   return lidos;
+}
+
+function descreverArquivos(lidos: ArquivoLido[]): string {
+  if (lidos.length === 0) return "(nenhum — só o ambiente)";
+  return lidos
+    .map((a) => (a.aproveitado ? a.caminho : `${a.caminho} (existe, mas sem nada aproveitável)`))
+    .join("\n                ");
 }
 
 function arg(nome: string): string | undefined {
@@ -127,11 +145,7 @@ class ErroDeUso extends Error {}
 
 async function main() {
   const arquivosEnv = carregarEnv();
-  log(
-    arquivosEnv.length > 0
-      ? `Configuração lida de ${arquivosEnv.join(", ")}`
-      : "Usando apenas variáveis do ambiente",
-  );
+  log(`Configuração: ${descreverArquivos(arquivosEnv)}`);
 
   // Vazio e ausente são problemas diferentes e o conserto é diferente: uma
   // linha em branco veio de um .env copiado do .env.example (a variável está
@@ -164,11 +178,13 @@ async function main() {
   if (problemas.length > 0) {
     throw new ErroDeUso(
       `Faltam valores de configuração:\n${problemas.join("\n")}\n\n` +
-        `Arquivos lidos: ${arquivosEnv.length > 0 ? arquivosEnv.join(", ") : "(nenhum — só o ambiente)"}\n\n` +
+        `Arquivos: ${descreverArquivos(arquivosEnv)}\n\n` +
         "O jeito curto, sem copiar segredo nenhum à mão — na raiz do projeto:\n" +
         "  npx vercel@latest link\n" +
-        "  npx vercel@latest env pull .env.production.local\n" +
+        "  npx vercel@latest env pull .env.production.local --environment=production\n" +
         "  pnpm importar:shopee\n\n" +
+        "A flag --environment=production não é opcional: sem ela o comando baixa o\n" +
+        "ambiente de desenvolvimento, que costuma estar vazio, e grava um arquivo sem nada.\n\n" +
         "À mão, se preferir: Vercel → Settings → Environment Variables → olho de cada uma.\n" +
         "A CREDENTIALS_ENCRYPTION_KEY precisa ser exatamente a mesma da Vercel — é ela que abre o token da loja já salvo no banco.",
     );
