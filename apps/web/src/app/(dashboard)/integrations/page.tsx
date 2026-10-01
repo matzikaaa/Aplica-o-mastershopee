@@ -8,6 +8,7 @@ import { MARKETPLACE_TO_SLUG } from "@/lib/marketplace-slug";
 import { MarketplaceCard } from "@/components/integrations/marketplace-card";
 import { ShopeeDiagnose } from "@/components/integrations/shopee-diagnose";
 import { ShopeePreview } from "@/components/integrations/shopee-preview";
+import { ShopeeImport } from "@/components/integrations/shopee-import";
 
 export default async function IntegrationsPage({
   searchParams,
@@ -75,7 +76,12 @@ export default async function IntegrationsPage({
       {/* Only when partner credentials exist: before that the card would be a
           button that can only ever say "não configurado". */}
       {isProviderConfigured("SHOPEE", env) && <ShopeeDiagnose />}
-      {isProviderConfigured("SHOPEE", env) && <ShopeePreview />}
+      {isProviderConfigured("SHOPEE", env) && (
+        <>
+          <ShopeeImport />
+          <ShopeePreview />
+        </>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {marketplaces.map((m) => (

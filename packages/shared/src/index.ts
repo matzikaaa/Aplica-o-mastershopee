@@ -7,3 +7,14 @@ export * from "./schemas/alerts";
 export * from "./import";
 export * from "./daily-report";
 export * from "./cost-snapshot";
+
+export {
+  JANELA_SEGUNDOS,
+  novoEstado,
+  serializarEstado,
+  lerEstado,
+  totalDeJanelas,
+  fimDaJanela,
+  percentualConcluido,
+  type EstadoImportacao,
+} from "./import-progress";

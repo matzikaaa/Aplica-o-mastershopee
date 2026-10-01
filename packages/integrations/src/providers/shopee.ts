@@ -852,6 +852,83 @@ export class ShopeeProvider implements MarketplaceProvider {
   }
 
   /**
+   * Só os identificadores de uma janela — a parte barata da importação.
+   *
+   * Separada de `fetchOrders` de propósito. Listar 50 pedidos custa uma
+   * chamada; descrevê-los custa uma chamada de detalhe mais **uma de escrow
+   * por pedido**. Com a lista em mãos antes de gastar isso, quem chama pode
+   * perguntar ao banco quais já estão gravados e completos e pedir detalhe
+   * só do resto.
+   *
+   * É o que transforma reimportar um histórico já baixado de "tão caro
+   * quanto baixá-lo" em uma chamada e uma consulta por página — e é o que
+   * faz uma rodada interrompida no meio custar quase nada para retomar.
+   */
+  async listOrderIds(
+    credentials: ProviderCredentials,
+    from: number,
+    to: number,
+    cursor: string,
+    pageSize = 50,
+  ): Promise<{ orderSns: string[]; nextCursor: string | null }> {
+    const list = await this.shopRequest<{
+      order_list?: { order_sn: string }[];
+      more?: boolean;
+      next_cursor?: string;
+    }>("/api/v2/order/get_order_list", credentials, {
+      time_range_field: "update_time",
+      time_from: String(from),
+      time_to: String(to),
+      page_size: String(pageSize),
+      ...(cursor ? { cursor } : {}),
+    });
+
+    return {
+      orderSns: (list.order_list ?? []).map((o) => o.order_sn),
+      nextCursor: list.more && list.next_cursor ? list.next_cursor : null,
+    };
+  }
+
+  /**
+   * Descreve os pedidos cujos identificadores já se conhece.
+   *
+   * O limite de 50 por chamada de detalhe é da Shopee; acima disso ela
+   * recusa a requisição inteira, então a fatia é feita aqui e não deixada
+   * para quem chama lembrar.
+   */
+  async fetchOrdersByIds(
+    credentials: ProviderCredentials,
+    orderSns: string[],
+  ): Promise<NormalizedOrder[]> {
+    if (orderSns.length === 0) return [];
+
+    const lotes: string[][] = [];
+    for (let i = 0; i < orderSns.length; i += 50) lotes.push(orderSns.slice(i, i + 50));
+
+    const saida: NormalizedOrder[] = [];
+    for (const lote of lotes) {
+      const detail = await this.shopRequest<{ order_list?: ShopeeOrderDetailRaw[] }>(
+        "/api/v2/order/get_order_detail",
+        credentials,
+        {
+          order_sn_list: lote.join(","),
+          response_optional_fields: "item_list,total_amount,actual_shipping_fee,estimated_shipping_fee",
+        },
+      );
+
+      const orders = detail.order_list ?? [];
+      const escrows = await ShopeeProvider.mapLimited(orders, 12, (order) =>
+        this.fetchEscrow(credentials, order.order_sn),
+      );
+      for (const [i, order] of orders.entries()) {
+        saida.push(normalizeShopeeOrder(order, escrows[i] ?? null));
+      }
+    }
+
+    return saida;
+  }
+
+  /**
    * As taxas que a Shopee cobra do vendedor só existem aqui, e é uma chamada
    * por pedido — não há endpoint em lote.
    *

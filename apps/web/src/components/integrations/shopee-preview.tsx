@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Activity, Download, Eye, Tags, TriangleAlert } from "lucide-react";
+import { Activity, Eye, Tags, TriangleAlert } from "lucide-react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -108,7 +108,6 @@ export function ShopeePreview() {
   const [sync, setSync] = useState<SyncResult | null>(null);
   // Acumulado entre cliques: cada requisição traz um pedaço, e o total é o
   // que responde "já acabou?".
-  const [totalPedidos, setTotalPedidos] = useState(0);
   const [situacao, setSituacao] = useState<Situacao | null>(null);
   const [checando, setChecando] = useState(false);
 
@@ -180,54 +179,6 @@ export function ShopeePreview() {
     }
   }
 
-  /**
-   * Puxa o histórico inteiro sozinho.
-   *
-   * A Shopee consulta 15 dias por chamada e cada requisição tem que caber no
-   * tempo da função serverless, então o histórico sai em pedaços — mas isso é
-   * problema da máquina, não do vendedor. O laço repete enquanto o servidor
-   * disser que ainda falta, mostrando o total acumulado.
-   *
-   * Duas travas para o laço não virar um moinho: um teto de rodadas, e parar
-   * na primeira rodada que não gravou nada e ainda assim diz haver mais — que
-   * é o formato de um cursor que não avança.
-   */
-  async function importar() {
-    setSyncing("pedidos");
-    setSync(null);
-    setTotalPedidos(0);
-
-    const MAX_RODADAS = 40;
-    const comecou = Date.now();
-    let acumulado = 0;
-    let cursorAnterior: string | null | undefined;
-
-    try {
-      for (let rodada = 0; rodada < MAX_RODADAS; rodada++) {
-        // 120 dias cobrem o histórico desta loja; o cursor guarda a janela.
-        const data = await chamar<SyncResult>("/api/integrations/shopee/sync-now", { days: 120 });
-
-        acumulado += data.ordersWritten ?? 0;
-        setTotalPedidos(acumulado);
-        // Tempo total medido no cliente, não somado dos lotes: é o que o
-        // vendedor de fato esperou.
-        setSync({ ...data, ordersWritten: acumulado, elapsedMs: Date.now() - comecou });
-
-        if (data.error || !data.hasMore) break;
-
-        // Progresso é o cursor andar, não pedido ser gravado. Uma janela de 15
-        // dias sem vendas grava zero e ainda assim avançou — desistir nela
-        // parava a importação justamente no começo de uma loja nova, onde as
-        // primeiras janelas são vazias por definição.
-        if (cursorAnterior !== undefined && data.cursor === cursorAnterior) break;
-        cursorAnterior = data.cursor;
-      }
-      router.refresh();
-    } finally {
-      setSyncing(null);
-    }
-  }
-
   return (
     <div className="space-y-3 rounded-xl border border-border bg-card px-4 py-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -236,7 +187,7 @@ export function ShopeePreview() {
           <p className="mt-0.5 text-xs text-muted-foreground">
             <strong>Ver prévia</strong> mostra o cálculo ao lado da resposta crua da Shopee, sem gravar nada.{" "}
             <strong>Importar SKUs</strong> traz o catálogo para você cadastrar os custos.{" "}
-            <strong>Importar histórico</strong> grava todos os pedidos, buscando sozinho até o fim.
+            <strong>Situação</strong> mostra o que já está gravado no banco.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -263,12 +214,6 @@ export function ShopeePreview() {
           >
             <Activity className="h-4 w-4" />
             {checando ? "Checando..." : "Situação"}
-          </Button>
-          <Button size="sm" onClick={importar} disabled={loading || syncing !== null} className="gap-2">
-            <Download className="h-4 w-4" />
-            {syncing === "pedidos"
-              ? `Importando${totalPedidos > 0 ? ` (${totalPedidos})` : ""}...`
-              : "Importar histórico"}
           </Button>
         </div>
       </div>
@@ -304,14 +249,13 @@ export function ShopeePreview() {
 
       {sync?.ok && (
         <div className="space-y-1 rounded-lg border border-success/30 bg-success/10 px-3 py-2 text-xs">
+          {/* Este painel só cuida do catálogo agora; os pedidos têm barra de
+              progresso própria logo acima. */}
           <p>
-            {sync.productsWritten !== undefined
-              ? `${sync.productsWritten} SKU(s) trazidos do catálogo.`
-              : `${sync.ordersWritten} pedido(s) gravados${totalPedidos > (sync.ordersWritten ?? 0) ? ` (${totalPedidos} nesta sessão)` : ""}.`}{" "}
+            {sync.productsWritten ?? 0} SKU(s) trazidos do catálogo.{" "}
             {sync.hasMore
-              ? "A importação parou antes do fim — clique de novo para retomar de onde parou."
-              : "Histórico completo, nada mais pendente."}
-            {sync.elapsedMs ? ` (${(sync.elapsedMs / 1000).toFixed(0)}s)` : ""}
+              ? "Parou antes do fim — clique de novo para trazer o resto."
+              : "Catálogo completo."}
           </p>
           {/* Sem custo cadastrado, o pedido entra com margem igual à receita.
               O painel marca isso como "sem custo", mas dizer aqui é o que
