@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { prisma, resolveProductBySku } from "@mastershopee/database";
+import {
+  backfillMissingCostSnapshots,
+  prisma,
+  recomputeMetricsForDays,
+  resolveProductBySku,
+} from "@mastershopee/database";
 import { bulkCostRowSchema, type BulkImportResult } from "@mastershopee/shared";
 import { requireWorkspace } from "@/lib/session";
 
@@ -9,6 +14,7 @@ export async function POST(request: Request) {
   const { rows } = (await request.json()) as { rows: unknown[] };
 
   const result: BulkImportResult = { imported: 0, updated: 0, skipped: 0, errors: [] };
+  const diasAfetados = new Set<string>();
 
   for (let i = 0; i < rows.length; i++) {
     const parsed = bulkCostRowSchema.safeParse(rows[i]);
@@ -40,9 +46,18 @@ export async function POST(request: Request) {
       },
     });
 
+    // Os pedidos já importados recebem o custo agora, e os dias deles são
+    // reagregados. O cadastro avulso fazia isso desde sempre; a importação em
+    // massa não — então quem preencheu a planilha inteira de uma vez via o
+    // catálogo completo e o painel continuar mostrando o mesmo lucro inflado,
+    // sem nada na tela ligando uma coisa à outra.
+    for (const dia of await backfillMissingCostSnapshots(product.id)) diasAfetados.add(dia);
+
     if (hadPreviousCost) result.updated++;
     else result.imported++;
   }
+
+  await recomputeMetricsForDays(workspace.id, [...diasAfetados]);
 
   await prisma.auditLog.create({
     data: {

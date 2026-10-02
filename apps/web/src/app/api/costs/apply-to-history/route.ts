@@ -47,13 +47,23 @@ export async function POST() {
     if (!firstSale) continue;
 
     const firstSaleAt = firstSale.order.orderedAt;
-    if (earliestCost.effectiveFrom <= firstSaleAt) continue;
 
-    await prisma.productCost.update({
-      where: { id: earliestCost.id },
-      data: { effectiveFrom: firstSaleAt },
-    });
-    backdated++;
+    // Retroagir é condicional; preencher não é.
+    //
+    // Antes, um custo que já começava antes da primeira venda fazia o laço
+    // pular o produto inteiro — inclusive o preenchimento. Só que "o custo é
+    // antigo o bastante" e "os itens já têm o custo gravado" são coisas
+    // diferentes: um custo cadastrado com data retroativa depois dos pedidos
+    // já importados deixa exatamente esse rastro, e nenhum caminho da
+    // aplicação voltava para fechá-lo. Eram itens sem custo que não tinham
+    // conserto possível, listados num aviso que não dizia quais eram.
+    if (earliestCost.effectiveFrom > firstSaleAt) {
+      await prisma.productCost.update({
+        where: { id: earliestCost.id },
+        data: { effectiveFrom: firstSaleAt },
+      });
+      backdated++;
+    }
 
     for (const day of await backfillMissingCostSnapshots(product.id)) touchedDays.add(day);
   }

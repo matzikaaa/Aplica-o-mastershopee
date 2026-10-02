@@ -1,4 +1,4 @@
-import { prisma, unknownCostWhere } from "@mastershopee/database";
+import { prisma, unknownCostWhere, vendasSemCusto } from "@mastershopee/database";
 import { requireWorkspace } from "@/lib/session";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -7,6 +7,7 @@ import { AddCostDialog } from "@/components/costs/add-cost-dialog";
 import { ImportCostsDialog } from "@/components/costs/import-costs-dialog";
 import { MergeSkusDialog } from "@/components/products/merge-skus-dialog";
 import { IncompleteCostBanner } from "@/components/dashboard/incomplete-cost-banner";
+import { UnknownCostList } from "@/components/costs/unknown-cost-list";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import Link from "next/link";
 import { Receipt, TriangleAlert } from "lucide-react";
@@ -66,7 +67,15 @@ export default async function CostsPage() {
         </div>
       </div>
 
-      {itemsWithoutCost > 0 && <IncompleteCostBanner itemsWithoutCost={itemsWithoutCost} scope="em todo o histórico" showCostsLink={false} />}
+      {itemsWithoutCost > 0 && (
+        <div className="space-y-3">
+          <IncompleteCostBanner itemsWithoutCost={itemsWithoutCost} scope="em todo o histórico" showCostsLink={false} />
+          {/* O aviso diz quantos; a lista diz quais. Separados, o número vira
+              enigma — foi o que aconteceu com "3 itens sem custo" numa tela
+              em que todo produto mostrava custo preenchido. */}
+          <UnknownCostList vendas={await vendasSemCusto(workspace.id)} />
+        </div>
+      )}
 
       {missingCost > 0 && (
         <div className="flex flex-col gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">

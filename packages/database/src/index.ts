@@ -54,6 +54,8 @@ export { hitRateLimit, purgeExpiredRateLimits } from "./rate-limit";
 
 export { pedidosJaCompletos } from "./order-known";
 
+export { vendasSemCusto, type VendaSemCusto } from "./unknown-cost-report";
+
 export { collectLowStock, markLowStockNotified, type LowStockItem } from "./low-stock";
 
 export {
