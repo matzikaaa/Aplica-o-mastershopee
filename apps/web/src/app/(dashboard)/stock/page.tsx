@@ -111,7 +111,10 @@ export default async function StockPage() {
 
   return (
     <div className="space-y-6">
-      <Header />
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <Header />
+        <StockGroupDialog produtos={agrupaveis} />
+      </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <SummaryCard label="Produtos controlados" value={String(items.length)} />
