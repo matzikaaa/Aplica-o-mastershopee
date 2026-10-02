@@ -1,7 +1,7 @@
 import Decimal from "decimal.js";
 import { prisma } from "./index";
 import { ensureProductForOrderItem } from "./product-upsert";
-import { applySaleToStock, reverseSaleFromStock } from "./stock";
+import { applySaleToStock, reverseSaleFromStock, type AlvoDeEstoque } from "./stock";
 
 /**
  * A gravação de um pedido do marketplace, num lugar só.
@@ -68,10 +68,12 @@ export interface UpsertOrderAccount {
 export interface SyncCache {
   products: Map<string, string | null>;
   costs: Map<string, Decimal>;
+  /** Onde cada SKU baixa estoque, e com que multiplicador. */
+  alvos: Map<string, AlvoDeEstoque>;
 }
 
 export function createSyncCache(): SyncCache {
-  return { products: new Map(), costs: new Map() };
+  return { products: new Map(), costs: new Map(), alvos: new Map() };
 }
 
 /**
@@ -187,6 +189,7 @@ export async function upsertNormalizedOrder(
         productId: product.id,
         orderItemId,
         units: item.quantity,
+        alvos: cache?.alvos,
         type: o.status === "RETURNED" ? "RETURN_IN" : "CANCELLATION_IN",
         note: `Pedido ${o.externalOrderId} — ${o.status.toLowerCase()}`,
       });
@@ -196,6 +199,7 @@ export async function upsertNormalizedOrder(
         productId: product.id,
         orderItemId,
         units: item.quantity,
+        alvos: cache?.alvos,
         occurredAt: o.orderedAt,
         note: `Venda ${account.marketplace} — pedido ${o.externalOrderId}`,
       });

@@ -18,3 +18,10 @@ export {
   percentualConcluido,
   type EstadoImportacao,
 } from "./import-progress";
+
+export {
+  lerSufixo,
+  sugerirGrupos,
+  type SkuSugerido,
+  type GrupoSugerido,
+} from "./stock-group";

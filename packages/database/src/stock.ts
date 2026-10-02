@@ -122,6 +122,45 @@ export async function recordStockMovement(input: RecordMovementInput): Promise<n
 }
 
 /**
+ * Onde um SKU realmente baixa estoque, e quanto.
+ *
+ * Um SKU agrupado não tem saldo próprio: ele consome `unitsPerSale` unidades
+ * do produto-base. Resolver isto aqui, no caminho único por onde as vendas
+ * passam, é o que impede a tela e o alerta de divergirem — dois lugares
+ * calculando "quantas unidades isso come" é garantia de que um dia vão
+ * discordar (§60).
+ */
+export interface AlvoDeEstoque {
+  productId: string;
+  multiplicador: number;
+}
+
+export async function resolveStockTarget(
+  productId: string,
+  cache?: Map<string, AlvoDeEstoque>,
+): Promise<AlvoDeEstoque> {
+  const guardado = cache?.get(productId);
+  if (guardado) return guardado;
+
+  const produto = await prisma.product.findUnique({
+    where: { id: productId },
+    select: { stockParentId: true, unitsPerSale: true },
+  });
+
+  const alvo: AlvoDeEstoque = produto
+    ? {
+        productId: produto.stockParentId ?? productId,
+        // Um multiplicador zero ou negativo faria a venda não descontar nada,
+        // ou devolver unidades. Nenhum dos dois é um estado que valha gravar.
+        multiplicador: Math.max(1, produto.unitsPerSale),
+      }
+    : { productId, multiplicador: 1 };
+
+  cache?.set(productId, alvo);
+  return alvo;
+}
+
+/**
  * Deducts the units of one sold order item. Safe to call repeatedly for the
  * same item — the second call is a no-op.
  */
@@ -132,12 +171,14 @@ export async function applySaleToStock(params: {
   units: number;
   occurredAt?: Date;
   note?: string;
+  alvos?: Map<string, AlvoDeEstoque>;
 }): Promise<number | null> {
+  const alvo = await resolveStockTarget(params.productId, params.alvos);
   return recordStockMovement({
     workspaceId: params.workspaceId,
-    productId: params.productId,
+    productId: alvo.productId,
     type: "SALE_OUT",
-    units: params.units,
+    units: params.units * alvo.multiplicador,
     orderItemId: params.orderItemId,
     occurredAt: params.occurredAt,
     note: params.note,
@@ -159,17 +200,24 @@ export async function reverseSaleFromStock(params: {
   units: number;
   type: Extract<StockMovementType, "CANCELLATION_IN" | "RETURN_IN">;
   note?: string;
+  alvos?: Map<string, AlvoDeEstoque>;
 }): Promise<number | null> {
   const original = await prisma.stockMovement.findUnique({
     where: { orderItemId: params.orderItemId },
   });
   if (!original || original.type !== "SALE_OUT") return null;
 
+  // Devolve exatamente o que a venda tirou, em vez de recalcular pelo
+  // agrupamento de hoje: entre a venda e a devolução o SKU pode ter sido
+  // agrupado, ou o multiplicador mudado, e recalcular criaria unidades que
+  // nunca saíram. O movimento original é o registro do que de fato aconteceu.
+  const alvo = await resolveStockTarget(params.productId, params.alvos);
+
   return recordStockMovement({
     workspaceId: params.workspaceId,
-    productId: params.productId,
+    productId: alvo.productId,
     type: params.type,
-    units: params.units,
+    units: Math.abs(original.quantity),
     orderItemId: `reversal:${params.orderItemId}`,
     note: params.note,
   });
@@ -199,9 +247,23 @@ export async function unitsSoldPerProduct(
     _sum: { quantity: true },
   });
 
+  // O ritmo de venda tem que falar a mesma língua do saldo, e o saldo de um
+  // grupo está em unidades-base. Somar "3 caixas" a "2 unidades" daria 5 e a
+  // cobertura sairia pelo triplo do tempo real: a caixa come três da
+  // prateleira, não uma.
+  const agrupamento = await prisma.product.findMany({
+    where: { workspaceId, OR: [{ stockParentId: { not: null } }, { unitsPerSale: { not: 1 } }] },
+    select: { id: true, stockParentId: true, unitsPerSale: true },
+  });
+  const porSku = new Map(agrupamento.map((p) => [p.id, p]));
+
   const result = new Map<string, number>();
   for (const row of rows) {
-    if (row.productId) result.set(row.productId, row._sum.quantity ?? 0);
+    if (!row.productId) continue;
+    const info = porSku.get(row.productId);
+    const destino = info?.stockParentId ?? row.productId;
+    const unidades = (row._sum.quantity ?? 0) * Math.max(1, info?.unitsPerSale ?? 1);
+    result.set(destino, (result.get(destino) ?? 0) + unidades);
   }
   return result;
 }

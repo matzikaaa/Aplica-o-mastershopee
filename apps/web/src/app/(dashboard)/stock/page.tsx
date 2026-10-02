@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { buttonVariants } from "@/components/ui/button";
 import { StockEntryDialog } from "@/components/stock/stock-entry-dialog";
 import { ReorderSettingsDialog } from "@/components/stock/reorder-settings-dialog";
+import { StockGroupDialog } from "@/components/stock/stock-group-dialog";
 
 export const dynamic = "force-dynamic";
 
@@ -26,16 +27,57 @@ const SALES_WINDOW_DAYS = 30;
 export default async function StockPage() {
   const { workspace } = await requireWorkspace();
 
-  const [items, sold] = await Promise.all([
+  const [items, sold, produtos] = await Promise.all([
     prisma.stockItem.findMany({
       where: { workspaceId: workspace.id },
-      include: { product: { select: { id: true, name: true, sku: true } } },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            sku: true,
+            // As variações aparecem sob a base: é o único jeito de o saldo
+            // único fazer sentido para quem olha e procura "LAVANDROLL-3".
+            stockChildren: {
+              select: { id: true, sku: true, name: true, unitsPerSale: true },
+              orderBy: { unitsPerSale: "asc" },
+            },
+          },
+        },
+      },
       orderBy: { product: { name: "asc" } },
     }),
     unitsSoldPerProduct(workspace.id, SALES_WINDOW_DAYS),
+    prisma.product.findMany({
+      where: { workspaceId: workspace.id },
+      select: {
+        id: true,
+        sku: true,
+        name: true,
+        unitsPerSale: true,
+        stockParentId: true,
+        stockItem: { select: { quantity: true } },
+      },
+      orderBy: { sku: "asc" },
+    }),
   ]);
 
-  const rows = items.map((item) => {
+  const agrupaveis = produtos.map((p) => ({
+    id: p.id,
+    sku: p.sku,
+    nome: p.name,
+    unidades: p.stockItem?.quantity ?? 0,
+    unitsPerSale: p.unitsPerSale,
+    agrupadoEm: p.stockParentId,
+  }));
+
+  // SKUs agrupados não aparecem como linha própria: o saldo deles é zero por
+  // construção e uma linha "0 unidades" ao lado da base só confundiria quem
+  // acabou de unificar.
+  const agrupados = new Set(produtos.filter((p) => p.stockParentId).map((p) => p.id));
+  const rows = items
+    .filter((item) => !agrupados.has(item.productId))
+    .map((item) => {
     const velocity = averageDailySales(sold.get(item.productId) ?? 0, SALES_WINDOW_DAYS);
     const coverage = calculateStockCoverage({
       quantity: item.quantity,
@@ -119,6 +161,19 @@ export default async function StockPage() {
                         {item.product.sku}
                         {item.supplierName ? ` · ${item.supplierName}` : ""}
                       </div>
+                      {item.product.stockChildren.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {item.product.stockChildren.map((v) => (
+                            <span
+                              key={v.id}
+                              title={v.name}
+                              className="rounded bg-muted px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground"
+                            >
+                              {v.sku} = {v.unitsPerSale}×
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums font-semibold">
                       <span className={item.quantity <= 0 ? "text-destructive" : undefined}>{item.quantity}</span>

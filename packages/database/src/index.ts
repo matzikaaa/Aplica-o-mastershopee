@@ -42,6 +42,15 @@ export {
 } from "./metrics";
 
 export {
+  agruparEstoque,
+  desagruparEstoque,
+  type MembroDoGrupo,
+  type ResultadoAgrupamento,
+} from "./stock-group";
+
+export {
+  resolveStockTarget,
+  type AlvoDeEstoque,
   ensureStockItem,
   recordStockMovement,
   applySaleToStock,
