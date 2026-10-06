@@ -74,6 +74,13 @@ interface Situacao {
   ultimaSincronizacao?: string | null;
   produtos?: { total: number; semCusto: number };
   itensSemCustoConhecido?: number;
+  push?: {
+    url: string;
+    aceitos: number;
+    rejeitados: number;
+    ultimoRejeitadoEm: string | null;
+    ultimoRejeitadoPorque: string | null;
+  };
 }
 
 const data = (v?: string | null) => (v ? new Date(v).toLocaleDateString("pt-BR") : "—");
@@ -97,6 +104,33 @@ function descreverProgresso(p: Situacao["progresso"]) {
     default:
       return "Não foi possível ler o ponto de retomada; a próxima rodada recomeça a faixa.";
   }
+}
+
+/**
+ * Estado dos avisos em tempo real.
+ *
+ * Nenhum push e push recusado são problemas diferentes com o mesmo sintoma, e
+ * dizer qual dos dois é poupa a investigação inteira: recusado tem a razão
+ * escrita e conserto em um minuto; ausente quer dizer que a URL não foi
+ * cadastrada no console.
+ */
+function LinhaDePush({ push }: { push: NonNullable<Situacao["push"]> }) {
+  if (push.rejeitados > 0) {
+    return (
+      <p className="text-destructive">
+        {push.rejeitados} aviso(s) da Shopee recusados por assinatura. {push.ultimoRejeitadoPorque}
+      </p>
+    );
+  }
+  if (push.aceitos > 0) {
+    return <p className="text-success">Avisos em tempo real ativos — {push.aceitos} recebidos.</p>;
+  }
+  return (
+    <p className="text-muted-foreground">
+      Avisos em tempo real ainda não chegaram. Cadastre esta URL no console da Shopee:{" "}
+      <code className="rounded bg-muted px-1 py-0.5 text-[11px]">{push.url}</code>
+    </p>
+  );
 }
 
 export function ShopeePreview() {
@@ -234,6 +268,7 @@ export function ShopeePreview() {
                 {situacao.produtos?.total} produto(s), {situacao.produtos?.semCusto} sem custo ·{" "}
                 {situacao.itensSemCustoConhecido} venda(s) com custo desconhecido.
               </p>
+              {situacao.push && <LinhaDePush push={situacao.push} />}
               {situacao.ultimoErro && <p className="text-destructive">Último erro: {situacao.ultimoErro}</p>}
             </>
           )}

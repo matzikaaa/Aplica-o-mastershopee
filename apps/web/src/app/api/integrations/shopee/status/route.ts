@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { countItemsWithUnknownCost, prisma } from "@mastershopee/database";
 import { requireWorkspace } from "@/lib/session";
+import { shopeePushUrl } from "@/lib/shopee-push-url";
 import { resolveShopeeAccount } from "@/lib/shopee-account";
 
 /**
@@ -39,6 +40,23 @@ export async function GET() {
 
   const progresso = descreverProgresso(account.lastSyncCursor);
 
+  // Os avisos em tempo real da Shopee, se estiverem configurados.
+  //
+  // Rejeitado é contado separado de ausente porque são problemas diferentes:
+  // push chegando e sendo recusado é configuração errada, com conserto e com
+  // mensagem; nenhum push é URL que nem foi cadastrada. Sem essa distinção os
+  // dois viram "não está funcionando" — a mesma confusão que custou um dia no
+  // error_sign.
+  const [aceitos, rejeitados, ultimoRejeitado] = await Promise.all([
+    prisma.webhookEvent.count({ where: { marketplace: "SHOPEE", signatureValid: true } }),
+    prisma.webhookEvent.count({ where: { marketplace: "SHOPEE", signatureValid: false } }),
+    prisma.webhookEvent.findFirst({
+      where: { marketplace: "SHOPEE", signatureValid: false },
+      orderBy: { createdAt: "desc" },
+      select: { createdAt: true, processingError: true },
+    }),
+  ]);
+
   return NextResponse.json({
     conta: account.displayName,
     status: account.status,
@@ -53,6 +71,13 @@ export async function GET() {
     ultimaSincronizacao: account.lastSyncAt,
     produtos: { total: produtos, semCusto },
     itensSemCustoConhecido: itensSemCusto,
+    push: {
+      url: shopeePushUrl(),
+      aceitos,
+      rejeitados,
+      ultimoRejeitadoEm: ultimoRejeitado?.createdAt ?? null,
+      ultimoRejeitadoPorque: ultimoRejeitado?.processingError ?? null,
+    },
   });
 }
 
