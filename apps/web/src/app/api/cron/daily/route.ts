@@ -3,9 +3,6 @@ import {
   collectLowStock,
   markLowStockNotified,
   prisma,
-  recomputeMetricsForDays,
-  resolveFreshCredentials,
-  upsertNormalizedOrder,
 } from "@mastershopee/database";
 import {
   isWhatsappConfigured,
@@ -19,9 +16,8 @@ import {
   morningBriefParams,
   zonedTime,
 } from "@mastershopee/shared";
-import { ShopeeProvider, decryptSecret, encryptSecret } from "@mastershopee/integrations";
-import { getIntegrationEnv } from "@/lib/integration-env";
 import { enviarResumoDiario } from "@/lib/daily-report-email";
+import { sincronizarAutomatico } from "@/lib/shopee-import";
 
 /**
  * A rotina diária, disparada pelo Cron da Vercel.
@@ -39,6 +35,15 @@ import { enviarResumoDiario } from "@/lib/daily-report-email";
  * ficar aberta na internet disparando mensagens.
  */
 export const maxDuration = 60;
+
+/**
+ * Fatia do minuto reservada a trazer pedidos, por conta.
+ *
+ * O resto da rota ainda precisa montar e enviar os relatórios: gastar o
+ * minuto inteiro sincronizando faria a função morrer antes de a mensagem
+ * sair, e aí a automação inteira não entrega nada.
+ */
+const ORCAMENTO_SYNC_MS = 15_000;
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -235,77 +240,35 @@ async function enviarResumosPorEmail() {
 }
 
 /**
- * Sincronização incremental de todas as contas Shopee conectadas.
+ * Sincronização de todas as contas Shopee conectadas, antes do relatório.
  *
- * Enquanto o worker não está hospedado, este é o único caminho automático
- * para os pedidos entrarem — sem ele o vendedor teria que abrir o painel e
- * clicar em "Importar" todo dia, o que não é sincronização.
+ * Delega para `sincronizarAutomatico`, o mesmo caminho que o painel usa ao
+ * ser aberto. Antes esta rota tinha a própria versão — uma página por conta,
+ * lendo o cursor do importador antigo — e duas implementações de "trazer os
+ * pedidos" é a receita conhecida para elas discordarem justamente no dia em
+ * que o número do relatório importa (§60).
  *
- * Incremental de propósito: retoma pelo cursor de cada conta e busca uma
- * página por conta por execução. Puxar histórico é trabalho de quem clicou
- * no botão, que pode acompanhar; aqui o objetivo é não deixar o dia de
- * ontem faltando quando o relatório for montado.
+ * Continua sendo o piso, não o teto: o Cron do plano gratuito roda uma vez
+ * por dia e existe para que o relatório da manhã nunca seja montado sobre
+ * dados de anteontem. O frescor durante o dia vem de quem abre o painel.
  */
 async function sincronizarPedidos() {
   const contas = await prisma.marketplaceAccount.findMany({
     where: { marketplace: "SHOPEE", status: { not: "DISCONNECTED" }, credential: { isNot: null } },
   });
 
-  const env = getIntegrationEnv();
-  const resultado: { conta: string; pedidos: number; erro?: string }[] = [];
+  const resultado: { conta: string; pedidos: number; modo?: string; erro?: string }[] = [];
 
   for (const conta of contas) {
-    const provider = new ShopeeProvider(
-      env.SHOPEE_PARTNER_ID ?? "",
-      env.SHOPEE_PARTNER_KEY ?? "",
-      env.SHOPEE_REDIRECT_URL ?? "",
-      env.SHOPEE_ENV ?? "live",
-      env.SHOPEE_KEY_ENCODING ?? "raw",
-    );
-
-    try {
-      const credentials = await resolveFreshCredentials({
-        accountId: conta.id,
-        externalShopId: conta.externalShopId,
-        provider,
-        encrypt: encryptSecret,
-        decrypt: decryptSecret,
-      });
-
-      const page = await provider.fetchOrders(
-        credentials,
-        { value: conta.lastSyncCursor },
-        conta.lastSyncAt ?? new Date(Date.now() - 3 * 24 * 3600 * 1000),
-      );
-
-      const dias = new Set<string>();
-      for (const pedido of page.items) {
-        await upsertNormalizedOrder(conta, pedido);
-        dias.add(pedido.orderedAt.toISOString().slice(0, 10));
-      }
-      if (dias.size > 0) await recomputeMetricsForDays(conta.workspaceId, [...dias]);
-
-      await prisma.marketplaceAccount.update({
-        where: { id: conta.id },
-        data: {
-          status: "CONNECTED",
-          lastSyncAt: new Date(),
-          lastSyncCursor: page.nextCursor.value,
-          lastErrorMessage: null,
-        },
-      });
-
-      resultado.push({ conta: conta.displayName, pedidos: page.items.length });
-    } catch (err) {
-      const erro = err instanceof Error ? err.message : "falha desconhecida";
-      await prisma.marketplaceAccount.update({
-        where: { id: conta.id },
-        data: { lastErrorMessage: erro },
-      });
-      // Uma conta com problema não pode impedir a sincronização das outras
-      // nem o envio dos relatórios de quem está bem.
-      resultado.push({ conta: conta.displayName, pedidos: 0, erro });
-    }
+    // Uma conta com problema não pode impedir a sincronização das outras nem
+    // o envio dos relatórios de quem está bem.
+    const r = await sincronizarAutomatico(conta, ORCAMENTO_SYNC_MS);
+    resultado.push({
+      conta: conta.displayName,
+      pedidos: r.gravados,
+      modo: r.modo,
+      ...(r.erro ? { erro: r.erro } : {}),
+    });
   }
 
   return resultado;

@@ -13,7 +13,7 @@ import { ShopeeImport } from "@/components/integrations/shopee-import";
 export default async function IntegrationsPage({
   searchParams,
 }: {
-  searchParams: { error?: string; reason?: string; connected?: string; message?: string; queue?: string; marketplace?: string };
+  searchParams: { error?: string; reason?: string; connected?: string; message?: string; marketplace?: string };
 }) {
   const { workspace } = await requireWorkspace();
   const env = getIntegrationEnv();
@@ -33,9 +33,11 @@ export default async function IntegrationsPage({
 
       {searchParams.connected && (
         <div className="rounded-lg border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">
-          {searchParams.queue === "unavailable"
-            ? 'Conexão realizada. A sincronização automática não está configurada neste ambiente — use "Importar pedidos" abaixo para trazer os pedidos agora.'
-            : "Conexão realizada! A primeira sincronização começou — pode levar alguns minutos."}
+          {/* A importação do histórico já foi aberta no retorno do OAuth e
+              avança sozinha a cada abertura do painel — o texto promete o que
+              de fato acontece, em vez de mandar clicar em algo. */}
+          Conexão realizada! A importação do histórico já começou e continua sozinha enquanto você usa o painel —
+          acompanhe o andamento abaixo.
         </div>
       )}
       {searchParams.error === "plan_limit" && (

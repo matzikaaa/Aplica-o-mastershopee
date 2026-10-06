@@ -105,6 +105,133 @@ export function descreverProgresso(
   };
 }
 
+function criarProvider(): ShopeeProvider {
+  const env = getIntegrationEnv();
+  return new ShopeeProvider(
+    env.SHOPEE_PARTNER_ID ?? "",
+    env.SHOPEE_PARTNER_KEY ?? "",
+    env.SHOPEE_REDIRECT_URL ?? "",
+    env.SHOPEE_ENV ?? "live",
+    env.SHOPEE_KEY_ENCODING ?? "raw",
+  );
+}
+
+async function credenciaisDe(account: MarketplaceAccount, provider: ShopeeProvider) {
+  return resolveFreshCredentials({
+    accountId: account.id,
+    externalShopId: account.externalShopId,
+    provider,
+    encrypt: encryptSecret,
+    decrypt: decryptSecret,
+  });
+}
+
+/**
+ * Traz o que mudou desde a última vez — a sincronização que roda sozinha.
+ *
+ * Separada da importação de histórico porque as duas têm donos diferentes:
+ * o histórico é uma varredura longa que alguém abriu e acompanha; esta é
+ * curta, repetida e ninguém está olhando. O que elas compartilham é o mais
+ * importante — listar barato, perguntar ao banco, buscar só o que falta —
+ * então a economia que fez o histórico caber também faz esta caber em
+ * segundos quando nada mudou, que é o caso quase sempre.
+ *
+ * A sobreposição de uma hora não é desperdício: a Shopee consulta por
+ * `update_time`, e um pedido alterado no mesmo minuto da rodada anterior
+ * cairia na fresta entre as duas janelas e nunca mais seria visto. Reler uma
+ * hora custa uma chamada e uma consulta, porque o que já está completo é
+ * pulado.
+ */
+export async function sincronizarNovos(
+  account: MarketplaceAccount,
+  orcamentoMs: number,
+): Promise<{ gravados: number; erro: string | null }> {
+  const SOBREPOSICAO_S = 3600;
+  const provider = criarProvider();
+  const inicio = Date.now();
+  const cache = createSyncCache();
+  const diasTocados = new Set<string>();
+  let gravados = 0;
+  let erro: string | null = null;
+
+  const desde = account.lastSyncAt
+    ? Math.floor(account.lastSyncAt.getTime() / 1000) - SOBREPOSICAO_S
+    : agora() - 3 * 24 * 3600;
+  // Nunca mais de uma janela: se a conta ficou semanas sem sincronizar, isso
+  // é trabalho de histórico, não de uma rodada automática que precisa
+  // terminar rápido. A importação cobre o resto quando for aberta.
+  const de = Math.max(desde, agora() - JANELA_SEGUNDOS);
+
+  try {
+    const credenciais = await credenciaisDe(account, provider);
+    let cursor = "";
+
+    while (Date.now() - inicio < orcamentoMs) {
+      const { orderSns, nextCursor } = await provider.listOrderIds(credenciais, de, agora(), cursor);
+      const completos = await pedidosJaCompletos(account.id, orderSns);
+      const faltando = orderSns.filter((sn) => !completos.has(sn));
+
+      for (let i = 0; i < faltando.length; i += LOTE) {
+        if (Date.now() - inicio >= orcamentoMs) break;
+        const pedidos = await provider.fetchOrdersByIds(credenciais, faltando.slice(i, i + LOTE));
+        for (const pedido of pedidos) {
+          await upsertNormalizedOrder(account, pedido, cache);
+          gravados++;
+          diasTocados.add(pedido.orderedAt.toISOString().slice(0, 10));
+        }
+      }
+
+      if (!nextCursor) break;
+      cursor = nextCursor;
+    }
+  } catch (err) {
+    erro = err instanceof Error ? err.message : "Falha ao consultar a Shopee.";
+  }
+
+  if (diasTocados.size > 0) {
+    await recomputeMetricsForDays(account.workspaceId, [...diasTocados]);
+  }
+
+  await prisma.marketplaceAccount.update({
+    where: { id: account.id },
+    data: erro
+      ? { lastErrorMessage: erro }
+      : // `lastSyncAt` só avança quando a rodada foi até o fim sem erro: marcar
+        // depois de uma falha moveria a janela para frente e os pedidos do
+        // intervalo que não chegou a ser lido sumiriam em silêncio.
+        { status: "CONNECTED", lastSyncAt: new Date(), lastErrorMessage: null },
+  });
+
+  return { gravados, erro };
+}
+
+/**
+ * O que a automação deve fazer por esta conta agora.
+ *
+ * Importação aberta tem precedência: continuar uma varredura pela metade vale
+ * mais do que buscar as novidades de hoje por cima de um histórico incompleto
+ * — e, enquanto ela não termina, as janelas dela já cobrem o presente.
+ */
+export async function sincronizarAutomatico(
+  account: MarketplaceAccount,
+  orcamentoMs: number,
+): Promise<{ modo: "historico" | "incremental"; gravados: number; erro: string | null }> {
+  const emAndamento = await importacaoAtual(account.id);
+
+  if (emAndamento && emAndamento.status === "RUNNING") {
+    const antes = emAndamento.itemsProcessed;
+    const progresso = await avancarImportacao(account, orcamentoMs);
+    return {
+      modo: "historico",
+      gravados: progresso.pedidosGravados - antes,
+      erro: progresso.erro,
+    };
+  }
+
+  const r = await sincronizarNovos(account, orcamentoMs);
+  return { modo: "incremental", ...r };
+}
+
 /**
  * Abre o trabalho, ou devolve o que já está aberto.
  *
@@ -167,14 +294,7 @@ export async function avancarImportacao(
   const estado = lerEstado(sync.cursor);
   if (!estado) throw new Error("O ponto de retomada está ilegível. Comece a importação de novo.");
 
-  const env = getIntegrationEnv();
-  const provider = new ShopeeProvider(
-    env.SHOPEE_PARTNER_ID ?? "",
-    env.SHOPEE_PARTNER_KEY ?? "",
-    env.SHOPEE_REDIRECT_URL ?? "",
-    env.SHOPEE_ENV ?? "live",
-    env.SHOPEE_KEY_ENCODING ?? "raw",
-  );
+  const provider = criarProvider();
 
   const inicio = Date.now();
   const cache = createSyncCache();

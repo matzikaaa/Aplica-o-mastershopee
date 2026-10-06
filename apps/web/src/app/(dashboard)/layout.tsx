@@ -4,6 +4,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { requireWorkspace } from "@/lib/session";
 import { getPlanPermissionService } from "@/lib/billing-context";
+import { AutoSync } from "@/components/dashboard/auto-sync";
 
 // Every page under here reads the signed-in user's workspace-scoped data —
 // never eligible for static generation/caching across different users.
@@ -45,6 +46,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header workspaceName={workspace.name} userName={user.name} userEmail={user.email} syncStatus={syncStatus} />
         <main className="flex-1 overflow-y-auto bg-muted/20 p-6">{children}</main>
+        {/* No layout, não numa página: a sincronização tem que acontecer
+            abrindo o painel por qualquer porta — Visão Geral, Pedidos,
+            Estoque. Presa a uma tela só, ela depende de o vendedor passar
+            justamente por ela, que é de novo pedir que ele faça o trabalho. */}
+        {live.length > 0 && <AutoSync />}
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import { cookies } from "next/headers";
 import { OAUTH_STATE_COOKIE, verifyOAuthState } from "@/lib/oauth-state";
 import { captureError } from "@/lib/observability";
 import { marketplaceSyncQueue } from "@/lib/queue";
+import { abrirImportacao } from "@/lib/shopee-import";
 
 /** OAuth callback (§33, §39). Verifies state, exchanges the code, encrypts tokens before they ever touch the DB. */
 export async function GET(request: Request, { params }: { params: { marketplace: string } }) {
@@ -107,24 +108,36 @@ export async function GET(request: Request, { params }: { params: { marketplace:
     // certo: a conta e as credenciais acima já estão gravadas, e existe a
     // sincronização manual que roda sem fila. Perder a conexão inteira por
     // causa do agendamento seria trocar um problema pequeno por um grande.
-    let queued = true;
+    // Abre a importação do histórico aqui mesmo, sem depender de fila.
+    //
+    // Conectar a loja *é* o pedido de trazer os pedidos: ninguém autoriza um
+    // marketplace para depois decidir se quer os dados dele. Deixar isso
+    // atrás de um botão criava o pior primeiro minuto possível — a conta
+    // conectada, a tela vazia, e nenhuma pista de que faltava uma ação.
+    //
+    // Só o plano é escrito aqui; a varredura acontece nas rodadas seguintes,
+    // puxadas pelo painel e pelo cron. É o que mantém o retorno do OAuth
+    // instantâneo, que é o que o navegador está esperando.
+    if (marketplace === "SHOPEE") {
+      try {
+        await abrirImportacao(account, 120);
+      } catch (importErr) {
+        // Conexão já gravada: falhar aqui não pode desfazê-la. O botão
+        // continua existindo em Integrações.
+        captureError(importErr, { marketplace, workspaceId: verified.workspaceId, route: "integrations.callback.import" });
+      }
+    }
+
+    // A fila continua sendo tentada para os marketplaces que dependem do
+    // worker; sem Redis ela lança, e isso não é motivo para desfazer uma
+    // conexão que deu certo.
     try {
       await marketplaceSyncQueue.add("initial-full-sync", { marketplaceAccountId: account.id, type: "FULL" });
     } catch (queueErr) {
-      queued = false;
       captureError(queueErr, { marketplace, workspaceId: verified.workspaceId, route: "integrations.callback.enqueue" });
-      await prisma.notification.create({
-        data: {
-          workspaceId: verified.workspaceId,
-          title: "Sincronização automática indisponível",
-          body: "A conta foi conectada, mas a fila de sincronização não está configurada. Use \"Importar pedidos\" em Integrações para trazer os pedidos agora.",
-        },
-      });
     }
 
-    return NextResponse.redirect(
-      new URL(`/integrations?connected=1${queued ? "" : "&queue=unavailable"}`, request.url),
-    );
+    return NextResponse.redirect(new URL("/integrations?connected=1", request.url));
   } catch (err) {
     captureError(err, { marketplace, workspaceId: verified.workspaceId, route: "integrations.callback" });
 
