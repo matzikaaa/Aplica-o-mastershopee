@@ -13,6 +13,23 @@ Aqui o push é a via rápida; a sincronização periódica é a rede.
 Em **Integrações → Situação**, o painel mostra a URL exata. Ela é
 `https://SEU-APP.vercel.app/api/webhooks/shopee`.
 
+## O que a Shopee garante (e o que não garante)
+
+A documentação de cada mecanismo declara isto, e o desenho daqui segue os
+quatro pontos:
+
+| Propriedade | Valor | O que isso obriga |
+| --- | --- | --- |
+| Time Out | **3s** | a rota confirma antes de trabalhar; buscar o pedido primeiro estouraria o teto |
+| Retry | 300s, 1800s, 10800s | estourar não perde o aviso: traz o mesmo três vezes |
+| Can Repeated Same Message | **Yes** | todo push é idempotente aqui |
+| Sequence Guaranteed | **No** | o push é só gatilho; o estado vem sempre da API |
+
+O último é o que mais importa: a aplicação **nunca acredita no conteúdo do
+push**. Ela usa o aviso para ir buscar o pedido na API. Dois avisos do mesmo
+pedido, em qualquer ordem, levam ao mesmo resultado — e um mecanismo novo que
+a Shopee lançar amanhã já funciona, desde que cite um número de pedido.
+
 ## 2. Cadastrar no console da Shopee
 
 No [Shopee Open Platform](https://open.shopee.com), no seu app:
@@ -21,8 +38,11 @@ No [Shopee Open Platform](https://open.shopee.com), no seu app:
 
 | Evento | Para quê |
 | --- | --- |
-| Order Status Update | o pedido entra em segundos |
-| Shop Deauthorization | o app avisa que a loja revogou o acesso, em vez de acumular erro de token |
+| `order_status_push` | o pedido entra em segundos |
+| `shop_authorization_cancel` | o app avisa que a loja revogou o acesso, em vez de acumular erro de token |
+
+Qualquer outro mecanismo que cite um número de pedido também funciona sem
+ajuste nenhum — a decisão é pelo conteúdo do aviso, não pelo código dele.
 
 Salve e envie um push de teste, se o console oferecer.
 
@@ -52,3 +72,17 @@ recebida, mais a URL usada como base. Três causas produzem o mesmo sintoma:
 
 Nenhum push recusado é processado, e todos ficam gravados com a razão — então
 dá para corrigir e conferir sem precisar provocar uma venda de verdade.
+
+## Desautorização com outro código
+
+O único tratamento que depende do número do mecanismo é o de revogação de
+acesso, porque esse push não cita pedido nenhum e não há como deduzi-lo do
+conteúdo. O padrão é `2`. Se o console mostrar outro Push Mechanism Code para
+`shop_authorization_cancel`, configure na Vercel:
+
+```
+SHOPEE_PUSH_CODES_DEAUTH=2,16
+```
+
+Errar esse número desliga apenas o aviso de revogação. **Nenhum pedido deixa
+de entrar por causa dele.**

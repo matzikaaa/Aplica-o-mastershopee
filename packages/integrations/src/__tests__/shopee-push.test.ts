@@ -1,7 +1,8 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
-  SHOPEE_PUSH_CODE,
+  citaPedido,
+  ehDesautorizacao,
   parseShopeePush,
   pedidoDoPush,
   verifyShopeePush,
@@ -83,7 +84,7 @@ describe("leitura do envelope", () => {
     const e = parseShopeePush(
       JSON.stringify({ shop_id: 98765, code: 3, timestamp: 1700000000, data: { ordersn: "250101ABC" } }),
     );
-    expect(e).toMatchObject({ shopId: "98765", code: SHOPEE_PUSH_CODE.STATUS_DO_PEDIDO, timestamp: 1700000000 });
+    expect(e).toMatchObject({ shopId: "98765", code: 3, timestamp: 1700000000 });
     expect(pedidoDoPush(e!)).toBe("250101ABC");
   });
 
@@ -107,5 +108,28 @@ describe("leitura do envelope", () => {
     // e a conta nunca seria encontrada.
     const e = parseShopeePush(JSON.stringify({ shop_id: 1234567890123, code: 3, data: {} }));
     expect(e?.shopId).toBe("1234567890123");
+  });
+});
+
+describe("o que fazer com o push", () => {
+  const push = (corpo: object) => parseShopeePush(JSON.stringify(corpo))!;
+
+  it("qualquer push que cite um pedido vale como gatilho", () => {
+    // Inclusive um código que esta versão não conhece: a Shopee acrescenta
+    // mecanismos novos, e um deles citando pedido não pode ser arquivado sem
+    // ação só por não constar de uma lista escrita hoje.
+    expect(citaPedido(push({ code: 3, data: { ordersn: "A1" } }))).toBe(true);
+    expect(citaPedido(push({ code: 99, data: { ordersn: "A1" } }))).toBe(true);
+  });
+
+  it("push sem pedido não vira consulta de pedido", () => {
+    expect(citaPedido(push({ code: 8, data: { item_id: 42 } }))).toBe(false);
+  });
+
+  it("desautorização é reconhecida pelos códigos configurados", () => {
+    expect(ehDesautorizacao(push({ code: 2, data: {} }), [2])).toBe(true);
+    expect(ehDesautorizacao(push({ code: 3, data: {} }), [2])).toBe(false);
+    // Lista vazia desliga o caso especial sem derrubar nada.
+    expect(ehDesautorizacao(push({ code: 2, data: {} }), [])).toBe(false);
   });
 });

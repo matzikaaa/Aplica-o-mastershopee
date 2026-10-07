@@ -22,22 +22,41 @@ import { resolveShopeeKey, shopeeSign, type ShopeeKeyEncoding } from "./shopee-k
 
 export interface ShopeePushEnvelope {
   shopId: string | null;
-  /** Código do tipo de push. Ver `SHOPEE_PUSH_CODE`. */
+  /** Código do mecanismo de push. Guardado para diagnóstico, não para decidir. */
   code: number;
   timestamp: number;
   data: Record<string, unknown>;
 }
 
 /**
- * Os códigos que esta aplicação trata. Os demais são guardados sem ação:
- * registrar um push que não sabemos interpretar é melhor do que descartá-lo,
- * porque é o registro que mostra que ele existe.
+ * O que fazer com um push é decidido pelo conteúdo, não pelo código.
+ *
+ * Cada mecanismo da Shopee tem o seu número — `reserved_stock_change_push` é
+ * 8, e a lista cresce com o catálogo deles. Fixar "3 é pedido" em código vira
+ * uma aposta que quebra calada quando a numeração muda ou quando um push novo
+ * também passa a citar pedido: o aviso chega, não casa com nenhum caso
+ * conhecido e é arquivado sem ação, exatamente como se tivesse se perdido.
+ *
+ * Um push que cita um número de pedido faz o pedido ser reconsultado. Isso
+ * independe de código, vale para os mecanismos que ainda nem existem, e é
+ * seguro porque a aplicação nunca acredita no conteúdo do push: ela usa o
+ * aviso só como gatilho e vai buscar o estado atual na API. É também o que
+ * torna inofensiva a entrega fora de ordem que a Shopee avisa não garantir —
+ * dois pushes do mesmo pedido em qualquer ordem levam ao mesmo resultado.
  */
-export const SHOPEE_PUSH_CODE = {
-  AUTORIZACAO: 1,
-  DESAUTORIZACAO: 2,
-  STATUS_DO_PEDIDO: 3,
-} as const;
+export function citaPedido(envelope: ShopeePushEnvelope): boolean {
+  return pedidoDoPush(envelope) !== null;
+}
+
+/**
+ * Os poucos códigos que precisam de tratamento próprio por não citarem pedido
+ * nenhum. Configuráveis porque são justamente os que não dá para deduzir do
+ * conteúdo, e um número errado aqui só desliga um caso especial — nunca
+ * impede um pedido de entrar.
+ */
+export function ehDesautorizacao(envelope: ShopeePushEnvelope, codigos: number[]): boolean {
+  return codigos.includes(envelope.code);
+}
 
 export function parseShopeePush(rawBody: string): ShopeePushEnvelope | null {
   try {

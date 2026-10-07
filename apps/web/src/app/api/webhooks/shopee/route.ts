@@ -7,18 +7,35 @@ import {
   upsertNormalizedOrder,
 } from "@mastershopee/database";
 import {
-  SHOPEE_PUSH_CODE,
   ShopeeProvider,
   decryptSecret,
+  ehDesautorizacao,
   encryptSecret,
   parseShopeePush,
   pedidoDoPush,
   verifyShopeePush,
 } from "@mastershopee/integrations";
+import { waitUntil } from "@vercel/functions";
 import { getIntegrationEnv } from "@/lib/integration-env";
 import { shopeePushUrl } from "@/lib/shopee-push-url";
 
 export const maxDuration = 30;
+
+/**
+ * Códigos de push que significam "a loja retirou a autorização".
+ *
+ * Variável de ambiente porque é o único caso que não dá para deduzir do
+ * conteúdo — ele não cita pedido nenhum — e a numeração dos mecanismos é da
+ * Shopee, não nossa. Errar o número aqui desliga só este tratamento especial;
+ * nenhum pedido deixa de entrar por causa disso.
+ */
+function codigosDeDesautorizacao(): number[] {
+  const bruto = process.env.SHOPEE_PUSH_CODES_DEAUTH ?? "2";
+  return bruto
+    .split(",")
+    .map((n) => Number(n.trim()))
+    .filter((n) => Number.isFinite(n));
+}
 
 /**
  * Os avisos que a Shopee manda quando um pedido muda.
@@ -114,8 +131,37 @@ export async function POST(request: Request) {
     marketplaceAccountId: conta?.id,
   });
 
+  // Confirmar primeiro, trabalhar depois.
+  //
+  // A Shopee desiste deste push em 3 segundos e reenvia em 300s, 1800s e
+  // 10800s. Buscar o pedido antes de responder — duas chamadas à API dela —
+  // estoura esse teto com facilidade, e o resultado não é um aviso perdido: é
+  // o mesmo aviso chegando três vezes, cada uma repetindo o trabalho e
+  // estourando de novo. `waitUntil` mantém a função viva depois da resposta,
+  // que é exatamente o que ela existe para fazer.
+  //
+  // Fora da Vercel o trabalho roda igual, só sem a garantia de sobreviver à
+  // resposta — e aí a varredura periódica continua sendo a rede.
+  waitUntil(processar(evento.id, envelope, conta, pedido));
+
+  return NextResponse.json({ ok: true });
+}
+
+/**
+ * O trabalho que acontece depois do 200.
+ *
+ * Nunca lança: isto roda fora do ciclo da resposta, então uma exceção aqui não
+ * tem para onde subir. O erro vai para o evento, que é onde alguém consegue
+ * vê-lo.
+ */
+async function processar(
+  eventoId: string,
+  envelope: ReturnType<typeof parseShopeePush> & object,
+  conta: Awaited<ReturnType<typeof prisma.marketplaceAccount.findFirst>>,
+  pedido: string | null,
+) {
   try {
-    if (envelope.code === SHOPEE_PUSH_CODE.DESAUTORIZACAO && conta) {
+    if (conta && ehDesautorizacao(envelope, codigosDeDesautorizacao())) {
       // A loja revogou o acesso do lado da Shopee. Continuar tentando
       // sincronizar produziria uma fila de erros de token sem causa visível.
       await prisma.marketplaceAccount.update({
@@ -129,22 +175,29 @@ export async function POST(request: Request) {
           body: "A autorização foi retirada no painel da Shopee. Reconecte em Integrações para voltar a sincronizar.",
         },
       });
-    } else if (envelope.code === SHOPEE_PUSH_CODE.STATUS_DO_PEDIDO && conta && pedido) {
+    } else if (conta && pedido) {
+      // O push é só o gatilho: o estado vem da API, nunca do corpo do aviso.
+      // É o que torna inofensiva a entrega fora de ordem que a Shopee avisa
+      // não garantir — dois avisos do mesmo pedido, em qualquer ordem, levam
+      // ao mesmo resultado.
       await trazerPedido(conta, pedido);
     }
 
     await prisma.webhookEvent.update({
-      where: { id: evento.id },
+      where: { id: eventoId },
       data: { processedAt: new Date(), processingError: null },
     });
   } catch (err) {
-    await prisma.webhookEvent.update({
-      where: { id: evento.id },
-      data: { processingError: err instanceof Error ? err.message : "falha ao processar" },
-    });
+    await prisma.webhookEvent
+      .update({
+        where: { id: eventoId },
+        data: { processingError: err instanceof Error ? err.message : "falha ao processar" },
+      })
+      .catch(() => {
+        // Banco fora do ar depois da resposta já enviada: não há mais nada a
+        // fazer aqui, e deixar esta promessa rejeitar derrubaria o processo.
+      });
   }
-
-  return NextResponse.json({ ok: true });
 }
 
 async function registrar(dados: {
