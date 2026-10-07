@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@mastershopee/database";
 import { getRedisUrl } from "@/lib/redis-url";
+import { shopeePushKey } from "@/lib/shopee-push-url";
 
 export const dynamic = "force-dynamic";
 
@@ -100,6 +101,13 @@ export async function GET(request: Request) {
       shopee: process.env.SHOPEE_PARTNER_ID
         ? `configurado (${process.env.SHOPEE_ENV ?? "live"}, chave lida como "${process.env.SHOPEE_KEY_ENCODING ?? "raw"}")`
         : "ausente",
+      // Presença, nunca valor — e dita aqui porque descobrir que a variável
+      // não chegou provocando um push custa uma venda de teste e uma espera.
+      // Variável salva no ambiente errado, ou num deploy que não foi
+      // promovido, é invisível de todo outro ângulo.
+      shopeePush: shopeePushKey().origem === "push"
+        ? "chave de push configurada"
+        : "SHOPEE_PUSH_PARTNER_KEY ausente — os avisos em tempo real serão recusados",
       whatsapp: process.env.WHATSAPP_ACCESS_TOKEN ? "configurado" : "ausente",
       cron: process.env.CRON_SECRET ? "configurado" : "ausente (relatório diário não dispara sozinho)",
     },
