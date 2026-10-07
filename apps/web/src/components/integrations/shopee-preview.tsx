@@ -80,6 +80,7 @@ interface Situacao {
     rejeitados: number;
     ultimoRejeitadoEm: string | null;
     ultimoRejeitadoPorque: string | null;
+    mecanismos: { nome: string; quantidade: number }[];
   };
 }
 
@@ -123,7 +124,15 @@ function LinhaDePush({ push }: { push: NonNullable<Situacao["push"]> }) {
     );
   }
   if (push.aceitos > 0) {
-    return <p className="text-success">Avisos em tempo real ativos — {push.aceitos} recebidos.</p>;
+    return (
+      <p className="text-success">
+        Avisos em tempo real ativos — {push.aceitos} recebidos
+        {push.mecanismos.length > 0
+          ? ` (${push.mecanismos.map((m) => `${m.nome}: ${m.quantidade}`).join(", ")})`
+          : ""}
+        .
+      </p>
+    );
   }
   return (
     <p className="text-muted-foreground">

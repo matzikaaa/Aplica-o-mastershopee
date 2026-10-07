@@ -38,7 +38,7 @@ No [Shopee Open Platform](https://open.shopee.com), no seu app:
 
 | Evento | Para quê |
 | --- | --- |
-| `order_status_push` | o pedido entra em segundos |
+| `order_status_push` (código 3) | o pedido entra em segundos — inclui cancelamentos antes do envio, que devolvem o estoque sozinhos |
 | `shop_authorization_cancel` | o app avisa que a loja revogou o acesso, em vez de acumular erro de token |
 
 Qualquer outro mecanismo que cite um número de pedido também funciona sem
@@ -52,7 +52,7 @@ Volte em **Integrações → Situação**. A linha de push diz uma de três cois
 
 | O que aparece | O que significa |
 | --- | --- |
-| `Avisos em tempo real ativos — N recebidos` | funcionando |
+| `Avisos em tempo real ativos — N recebidos (order_status_push: N)` | funcionando, e diz qual mecanismo está chegando |
 | `N aviso(s) recusados por assinatura` + razão | chegou e foi recusado — veja abaixo |
 | `Avisos em tempo real ainda não chegaram` | a URL não foi cadastrada, ou nada aconteceu na loja ainda |
 

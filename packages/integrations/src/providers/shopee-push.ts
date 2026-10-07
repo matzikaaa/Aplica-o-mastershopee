@@ -44,6 +44,22 @@ export interface ShopeePushEnvelope {
  * torna inofensiva a entrega fora de ordem que a Shopee avisa não garantir —
  * dois pushes do mesmo pedido em qualquer ordem levam ao mesmo resultado.
  */
+/**
+ * Nome do mecanismo por código, só para a tela falar em vez de numerar.
+ *
+ * Nenhuma decisão passa por aqui — essa é a diferença entre um rótulo e uma
+ * regra. Um código ausente desta tabela continua sendo tratado normalmente; a
+ * tela apenas mostra o número, que é a verdade disponível.
+ */
+const NOMES_DE_PUSH: Record<number, string> = {
+  3: "order_status_push",
+  8: "reserved_stock_change_push",
+};
+
+export function nomeDoPush(code: number): string {
+  return NOMES_DE_PUSH[code] ?? `código ${code}`;
+}
+
 export function citaPedido(envelope: ShopeePushEnvelope): boolean {
   return pedidoDoPush(envelope) !== null;
 }

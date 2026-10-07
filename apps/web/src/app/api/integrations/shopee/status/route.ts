@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { countItemsWithUnknownCost, prisma } from "@mastershopee/database";
 import { requireWorkspace } from "@/lib/session";
+import { nomeDoPush } from "@mastershopee/integrations";
 import { shopeePushUrl } from "@/lib/shopee-push-url";
 import { resolveShopeeAccount } from "@/lib/shopee-account";
 
@@ -47,13 +48,21 @@ export async function GET() {
   // mensagem; nenhum push é URL que nem foi cadastrada. Sem essa distinção os
   // dois viram "não está funcionando" — a mesma confusão que custou um dia no
   // error_sign.
-  const [aceitos, rejeitados, ultimoRejeitado] = await Promise.all([
+  const [aceitos, rejeitados, ultimoRejeitado, porTipo] = await Promise.all([
     prisma.webhookEvent.count({ where: { marketplace: "SHOPEE", signatureValid: true } }),
     prisma.webhookEvent.count({ where: { marketplace: "SHOPEE", signatureValid: false } }),
     prisma.webhookEvent.findFirst({
       where: { marketplace: "SHOPEE", signatureValid: false },
       orderBy: { createdAt: "desc" },
       select: { createdAt: true, processingError: true },
+    }),
+    // Quais mecanismos estão de fato chegando. Assinar o push errado no
+    // console e não assinar nenhum produzem o mesmo silêncio na tela; ver os
+    // nomes separa os dois sem abrir o painel da Shopee.
+    prisma.webhookEvent.groupBy({
+      by: ["eventType"],
+      where: { marketplace: "SHOPEE", signatureValid: true },
+      _count: { _all: true },
     }),
   ]);
 
@@ -77,6 +86,9 @@ export async function GET() {
       rejeitados,
       ultimoRejeitadoEm: ultimoRejeitado?.createdAt ?? null,
       ultimoRejeitadoPorque: ultimoRejeitado?.processingError ?? null,
+      mecanismos: porTipo
+        .map((t) => ({ nome: nomeDoPush(Number(t.eventType)), quantidade: t._count._all }))
+        .sort((a, b) => b.quantidade - a.quantidade),
     },
   });
 }
