@@ -52,6 +52,7 @@ export interface ShopeePushEnvelope {
  * tela apenas mostra o número, que é a verdade disponível.
  */
 const NOMES_DE_PUSH: Record<number, string> = {
+  2: "shop_authorization_canceled_push",
   3: "order_status_push",
   8: "reserved_stock_change_push",
 };

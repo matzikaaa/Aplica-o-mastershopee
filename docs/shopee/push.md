@@ -39,7 +39,7 @@ No [Shopee Open Platform](https://open.shopee.com), no seu app:
 | Evento | Para quê |
 | --- | --- |
 | `order_status_push` (código 3) | o pedido entra em segundos — inclui cancelamentos antes do envio, que devolvem o estoque sozinhos |
-| `shop_authorization_cancel` | o app avisa que a loja revogou o acesso, em vez de acumular erro de token |
+| `shop_authorization_canceled_push` (código 2) | o app avisa que a loja revogou o acesso, em vez de acumular erro de token |
 
 Qualquer outro mecanismo que cite um número de pedido também funciona sem
 ajuste nenhum — a decisão é pelo conteúdo do aviso, não pelo código dele.
@@ -77,8 +77,9 @@ dá para corrigir e conferir sem precisar provocar uma venda de verdade.
 
 O único tratamento que depende do número do mecanismo é o de revogação de
 acesso, porque esse push não cita pedido nenhum e não há como deduzi-lo do
-conteúdo. O padrão é `2`. Se o console mostrar outro Push Mechanism Code para
-`shop_authorization_cancel`, configure na Vercel:
+conteúdo. O padrão é `2`, que é o código de `shop_authorization_canceled_push` — ou
+seja, não há nada a configurar. A variável existe para o caso de a Shopee
+renumerar ou de outro mecanismo passar a significar o mesmo:
 
 ```
 SHOPEE_PUSH_CODES_DEAUTH=2,16
