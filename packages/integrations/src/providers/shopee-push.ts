@@ -139,3 +139,56 @@ export function verifyShopeePush(input: {
 
   return { valida, esperadaPrefixo: prefixo(esperada), recebidaPrefixo: prefixo(recebida) };
 }
+
+/**
+ * Qual URL, entre as plausíveis, produz a assinatura recebida.
+ *
+ * Uma assinatura que não bate tem duas causas possíveis e indistinguíveis pelo
+ * sintoma: a base usada difere da cadastrada no console, ou a chave é outra.
+ * Em vez de pedir que alguém compare dois endereços caractere a caractere —
+ * com `https` contra `http`, barra no fim, domínio de branch contra domínio de
+ * produção —, isto pergunta empiricamente: assina com cada candidata e diz
+ * qual delas reproduz o que a Shopee mandou.
+ *
+ * O resultado separa as duas causas de uma vez. Alguma bate: é URL, e o
+ * conserto é configurar `SHOPEE_PUSH_URL` com aquele valor exato. Nenhuma
+ * bate: a chave é outra, e comparar URLs seria perder tempo no lugar errado.
+ *
+ * Mesma ideia do diagnóstico que resolveu o `error_sign`: perguntar ao outro
+ * lado em vez de deduzir.
+ */
+export function encontrarBaseQueAssina(input: {
+  candidatas: string[];
+  rawBody: string;
+  authorization: string | null;
+  partnerKey: string;
+  encoding?: ShopeeKeyEncoding;
+}): string | null {
+  const recebida = (input.authorization ?? "").trim().toLowerCase();
+  if (!recebida) return null;
+
+  const chave = resolveShopeeKey(input.partnerKey, input.encoding ?? "raw");
+
+  for (const candidata of input.candidatas) {
+    if (shopeeSign(chave, `${candidata}|${input.rawBody}`).toLowerCase() === recebida) return candidata;
+  }
+  return null;
+}
+
+/**
+ * As variações que valem testar para uma mesma URL.
+ *
+ * São as diferenças que ninguém enxerga lendo: a barra no fim, e o esquema.
+ */
+export function variacoesDeUrl(url: string): string[] {
+  const limpa = url.trim();
+  if (!limpa) return [];
+
+  const semBarra = limpa.replace(/\/+$/, "");
+  const variacoes = new Set([semBarra, `${semBarra}/`]);
+
+  if (semBarra.startsWith("https://")) variacoes.add(semBarra.replace("https://", "http://"));
+  if (semBarra.startsWith("http://")) variacoes.add(semBarra.replace("http://", "https://"));
+
+  return [...variacoes];
+}

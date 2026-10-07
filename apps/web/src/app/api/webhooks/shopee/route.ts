@@ -10,9 +10,11 @@ import {
   ShopeeProvider,
   decryptSecret,
   ehDesautorizacao,
+  encontrarBaseQueAssina,
   encryptSecret,
   parseShopeePush,
   pedidoDoPush,
+  variacoesDeUrl,
   verifyShopeePush,
 } from "@mastershopee/integrations";
 import { waitUntil } from "@vercel/functions";
@@ -90,14 +92,18 @@ export async function POST(request: Request) {
       eventType: "assinatura-invalida",
       payload: rawBody.slice(0, 4000),
       signatureValid: false,
-      processingError:
-        `Assinatura não confere. Esperada começa com ${verificacao.esperadaPrefixo}, ` +
-        `recebida com ${verificacao.recebidaPrefixo || "(vazia)"}. ` +
-        `Base usada: ${shopeePushUrl()}. ` +
-        (origem === "api"
-          ? "Assinada com SHOPEE_PARTNER_KEY, a chave da API — mas o console gera uma Live Push Partner Key " +
-            "própria para os pushes. Clique em Generate lá e configure SHOPEE_PUSH_PARTNER_KEY na Vercel."
-          : "Confira se a URL é exatamente a cadastrada e se a Live Push Partner Key é a mesma."),
+      processingError: explicarRecusa({
+        verificacao,
+        origem,
+        base: shopeePushUrl(),
+        achada: encontrarBaseQueAssina({
+          candidatas: candidatasDeUrl(request),
+          rawBody,
+          authorization: request.headers.get("authorization"),
+          partnerKey: chave,
+          encoding: origem === "push" ? "raw" : (env.SHOPEE_KEY_ENCODING ?? "raw"),
+        }),
+      }),
     });
 
     // 2xx mesmo recusando, de propósito.
@@ -217,6 +223,69 @@ async function processar(
         // fazer aqui, e deixar esta promessa rejeitar derrubaria o processo.
       });
   }
+}
+
+/**
+ * As URLs que podem ter sido cadastradas no console.
+ *
+ * A configurada vem primeiro, mas a Vercel serve o mesmo app por vários
+ * endereços — o de produção, o do branch, o único de cada deploy — e cadastrar
+ * um e configurar outro é um erro que não se enxerga lendo. Os cabeçalhos de
+ * encaminhamento dizem por qual deles a requisição realmente entrou, que é a
+ * melhor pista disponível.
+ */
+function candidatasDeUrl(request: Request): string[] {
+  const candidatas = [...variacoesDeUrl(shopeePushUrl())];
+
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+  const proto = request.headers.get("x-forwarded-proto") ?? "https";
+  if (host) {
+    for (const v of variacoesDeUrl(`${proto}://${host}/api/webhooks/shopee`)) candidatas.push(v);
+  }
+
+  try {
+    const url = new URL(request.url);
+    for (const v of variacoesDeUrl(`${url.origin}${url.pathname}`)) candidatas.push(v);
+  } catch {
+    // URL da requisição ilegível não impede as outras candidatas de serem testadas.
+  }
+
+  return [...new Set(candidatas)];
+}
+
+/**
+ * A recusa explicada em uma frase que diz o que fazer.
+ *
+ * Alguma candidata assina: é a URL, e o conserto é um valor para copiar.
+ * Nenhuma assina: é a chave, e mandar comparar endereços seria desperdiçar a
+ * próxima tentativa no lugar errado.
+ */
+function explicarRecusa(input: {
+  verificacao: { esperadaPrefixo: string; recebidaPrefixo: string };
+  origem: "push" | "api";
+  base: string;
+  achada: string | null;
+}): string {
+  if (input.achada) {
+    return (
+      `A assinatura bate com a URL ${input.achada}, e não com ${input.base}. ` +
+      `É essa que está cadastrada no console. Configure SHOPEE_PUSH_URL na Vercel com exatamente esse valor ` +
+      `(ou troque a URL no console para ${input.base}).`
+    );
+  }
+
+  const cabecalho =
+    `Assinatura não confere com nenhuma URL plausível — então o problema é a chave, não o endereço. ` +
+    `Esperada começa com ${input.verificacao.esperadaPrefixo}, recebida com ${input.verificacao.recebidaPrefixo || "(vazia)"}. `;
+
+  return (
+    cabecalho +
+    (input.origem === "api"
+      ? "Está assinando com SHOPEE_PARTNER_KEY, a chave da API — mas o console gera uma Live Push Partner Key " +
+        "própria. Clique em Generate lá e configure SHOPEE_PUSH_PARTNER_KEY na Vercel."
+      : "Confira se a SHOPEE_PUSH_PARTNER_KEY é exatamente a Live Push Partner Key do console, sem espaços " +
+        "sobrando, e se foi salva no ambiente Production.")
+  );
 }
 
 async function registrar(dados: {

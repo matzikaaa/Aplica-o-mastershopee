@@ -2,6 +2,8 @@ import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   citaPedido,
+  encontrarBaseQueAssina,
+  variacoesDeUrl,
   ehDesautorizacao,
   parseShopeePush,
   pedidoDoPush,
@@ -131,5 +133,60 @@ describe("o que fazer com o push", () => {
     expect(ehDesautorizacao(push({ code: 3, data: {} }), [2])).toBe(false);
     // Lista vazia desliga o caso especial sem derrubar nada.
     expect(ehDesautorizacao(push({ code: 2, data: {} }), [])).toBe(false);
+  });
+});
+
+describe("descobrir qual URL assina", () => {
+  const corpo = JSON.stringify({ shop_id: 1, code: 3, data: { ordersn: "A1" } });
+
+  it("nomeia a candidata que reproduz a assinatura recebida", () => {
+    const cadastrada = "https://outro-dominio.com.br/api/webhooks/shopee";
+    const achada = encontrarBaseQueAssina({
+      candidatas: [URL_PUSH, cadastrada],
+      rawBody: corpo,
+      authorization: assinar(cadastrada, corpo),
+      partnerKey: CHAVE,
+    });
+    expect(achada).toBe(cadastrada);
+  });
+
+  it("devolve null quando a chave é que está errada", () => {
+    // A distinção que importa: nenhuma URL bate significa procurar no lugar
+    // certo — a chave — em vez de comparar endereços.
+    const achada = encontrarBaseQueAssina({
+      candidatas: [URL_PUSH, "https://outro.com/api/webhooks/shopee"],
+      rawBody: corpo,
+      authorization: assinar(URL_PUSH, corpo, "chave-diferente"),
+      partnerKey: CHAVE,
+    });
+    expect(achada).toBeNull();
+  });
+
+  it("pega a diferença de barra no fim", () => {
+    const comBarra = `${URL_PUSH}/`;
+    const achada = encontrarBaseQueAssina({
+      candidatas: variacoesDeUrl(URL_PUSH),
+      rawBody: corpo,
+      authorization: assinar(comBarra, corpo),
+      partnerKey: CHAVE,
+    });
+    expect(achada).toBe(comBarra);
+  });
+
+  it("pega a diferença de esquema", () => {
+    const http = URL_PUSH.replace("https://", "http://");
+    const achada = encontrarBaseQueAssina({
+      candidatas: variacoesDeUrl(URL_PUSH),
+      rawBody: corpo,
+      authorization: assinar(http, corpo),
+      partnerKey: CHAVE,
+    });
+    expect(achada).toBe(http);
+  });
+
+  it("sem assinatura recebida, não inventa resposta", () => {
+    expect(
+      encontrarBaseQueAssina({ candidatas: [URL_PUSH], rawBody: corpo, authorization: null, partnerKey: CHAVE }),
+    ).toBeNull();
   });
 });
