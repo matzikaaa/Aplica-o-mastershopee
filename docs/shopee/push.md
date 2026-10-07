@@ -32,19 +32,34 @@ a Shopee lançar amanhã já funciona, desde que cite um número de pedido.
 
 ## 2. Cadastrar no console da Shopee
 
-No [Shopee Open Platform](https://open.shopee.com), no seu app:
-**Push Mechanism** (ou *Webhook / Push Configuration*) → cole a URL em
-**Push URL / Callback URL** → marque os eventos:
+**Console → seu app → Push Mechanism → Set Push**, aba **Live Push Setting**.
+Quatro campos, nesta ordem — a verificação depende dela.
 
-| Evento | Para quê |
-| --- | --- |
-| `order_status_push` (código 3) | o pedido entra em segundos — inclui cancelamentos antes do envio, que devolvem o estoque sozinhos |
-| `shop_authorization_canceled_push` (código 2) | o app avisa que a loja revogou o acesso, em vez de acumular erro de token |
+**1. Get Live Push** — ligue.
 
-Qualquer outro mecanismo que cite um número de pedido também funciona sem
-ajuste nenhum — a decisão é pelo conteúdo do aviso, não pelo código dele.
+**2. Live Push Partner Key** → botão **Generate**.
 
-Salve e envie um push de teste, se o console oferecer.
+> **Esta chave não é o `SHOPEE_PARTNER_KEY`.** Os pushes são assinados com ela;
+> os da API, com a outra. Usar a de API produz assinatura que nunca bate, com
+> as duas chaves visivelmente corretas em seus lugares.
+>
+> Gere, copie e configure na Vercel como **`SHOPEE_PUSH_PARTNER_KEY`** —
+> **antes** de clicar em Verify. A verificação manda um push de teste, e sem a
+> chave certa ele é recusado.
+
+**3. Live Call Back URL** — a URL que aparece em **Integrações → Situação**:
+`https://SEU-APP.vercel.app/api/webhooks/shopee`. Depois clique em **Verify**.
+
+> *"Failed Verification! ... the response code we get from this callback_url is
+> not 2xx"* quer dizer que a Shopee não recebeu 2xx. Causas, nesta ordem:
+> URL vazia ou com erro de digitação; o deploy ainda não promovido; ou a
+> aplicação no ar sendo anterior a esta versão.
+
+**4. The Deployment Service Area** — onde a sua função roda, não onde você
+mora. Veja em **Vercel → Settings → Functions → Region** (o padrão é
+`iad1`, Washington D.C. = **US East**) e escolha a correspondente. Verify.
+
+**5. Live Push Settings** — a lista de mecanismos. Ligue:
 
 ## 3. Conferir
 
@@ -56,19 +71,24 @@ Volte em **Integrações → Situação**. A linha de push diz uma de três cois
 | `N aviso(s) recusados por assinatura` + razão | chegou e foi recusado — veja abaixo |
 | `Avisos em tempo real ainda não chegaram` | a URL não foi cadastrada, ou nada aconteceu na loja ainda |
 
+Se faltar a `SHOPEE_PUSH_PARTNER_KEY`, a linha diz isso antes de o primeiro
+push chegar — não é preciso provocar uma venda para descobrir.
+
 ## Se os avisos forem recusados
 
-A assinatura do push é HMAC-SHA256 de `URL|corpo`, com o `partner_key`. A
+A assinatura do push é HMAC-SHA256 de `URL|corpo`, com a **Live Push Partner
+Key**. A
 mensagem na tela traz os primeiros caracteres da assinatura esperada e da
 recebida, mais a URL usada como base. Três causas produzem o mesmo sintoma:
 
-1. **URL diferente da cadastrada.** É a mais comum. A base da assinatura é a
+1. **`SHOPEE_PUSH_PARTNER_KEY` ausente ou diferente da gerada no console.** A
+   mensagem na tela diz quando a aplicação caiu na chave da API por falta
+   dela.
+2. **URL diferente da cadastrada.** É a mais comum. A base da assinatura é a
    string exata que está no console — se lá está `https://meudominio.com.br/...`
    e o app calcula com `https://app.vercel.app/...`, nunca bate. Configure
    `SHOPEE_PUSH_URL` na Vercel com a URL exata do console.
-2. **`SHOPEE_PARTNER_KEY` errada** — a de Test no lugar da Live, por exemplo.
-   O mesmo diagnóstico de `/api/integrations/shopee/diagnose` vale aqui.
-3. **`SHOPEE_KEY_ENCODING` errado.** Mesma escolha das chamadas de API.
+3. **Ambiente trocado** — chave de Test com URL cadastrada em Live.
 
 Nenhum push recusado é processado, e todos ficam gravados com a razão — então
 dá para corrigir e conferir sem precisar provocar uma venda de verdade.

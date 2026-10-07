@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { countItemsWithUnknownCost, prisma } from "@mastershopee/database";
 import { requireWorkspace } from "@/lib/session";
 import { nomeDoPush } from "@mastershopee/integrations";
-import { shopeePushUrl } from "@/lib/shopee-push-url";
+import { shopeePushKey, shopeePushUrl } from "@/lib/shopee-push-url";
 import { resolveShopeeAccount } from "@/lib/shopee-account";
 
 /**
@@ -82,6 +82,10 @@ export async function GET() {
     itensSemCustoConhecido: itensSemCusto,
     push: {
       url: shopeePushUrl(),
+      // Qual chave está assinando. "api" quer dizer que SHOPEE_PUSH_PARTNER_KEY
+      // não foi configurada e a aplicação caiu na chave da API — que a Shopee
+      // não usa para push, então nenhum aviso vai ser aceito.
+      chave: shopeePushKey().origem,
       aceitos,
       rejeitados,
       ultimoRejeitadoEm: ultimoRejeitado?.createdAt ?? null,

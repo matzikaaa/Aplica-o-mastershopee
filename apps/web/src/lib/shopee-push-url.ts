@@ -18,3 +18,23 @@ export function shopeePushUrl(): string {
   const base = (process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? "").trim().replace(/\/$/, "");
   return `${base}/api/webhooks/shopee`;
 }
+
+/**
+ * A chave que assina os pushes — que **não é** o `partner_key` da API.
+ *
+ * O console gera uma *Live Push Partner Key* própria, num botão "Generate" ao
+ * lado do campo. Assinar push com a chave das chamadas de API produz uma
+ * assinatura que nunca bate, com as duas chaves visivelmente corretas em seus
+ * lugares — a mesma armadilha do `error_sign`, de novo, e com a mesma cara.
+ *
+ * O retorno traz a origem junto porque é isso que a mensagem de recusa precisa
+ * dizer: "assinei com a chave de API, e o console provavelmente gerou uma
+ * própria" é um diagnóstico; "assinatura não confere" não é.
+ */
+export function shopeePushKey(): { chave: string | null; origem: "push" | "api" } {
+  const push = process.env.SHOPEE_PUSH_PARTNER_KEY?.trim();
+  if (push) return { chave: push, origem: "push" };
+
+  const api = process.env.SHOPEE_PARTNER_KEY?.trim();
+  return { chave: api ?? null, origem: "api" };
+}

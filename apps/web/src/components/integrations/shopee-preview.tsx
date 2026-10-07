@@ -76,6 +76,7 @@ interface Situacao {
   itensSemCustoConhecido?: number;
   push?: {
     url: string;
+    chave: "push" | "api";
     aceitos: number;
     rejeitados: number;
     ultimoRejeitadoEm: string | null;
@@ -138,6 +139,15 @@ function LinhaDePush({ push }: { push: NonNullable<Situacao["push"]> }) {
     <p className="text-muted-foreground">
       Avisos em tempo real ainda não chegaram. Cadastre esta URL no console da Shopee:{" "}
       <code className="rounded bg-muted px-1 py-0.5 text-[11px]">{push.url}</code>
+      {push.chave === "api" && (
+        // Dito antes de o primeiro push chegar: esperar a recusa para descobrir
+        // que falta a chave custa uma ida ao console e uma venda de teste.
+        <>
+          {" "}
+          Falta a <strong>SHOPEE_PUSH_PARTNER_KEY</strong> — o console gera uma chave própria para push, no botão
+          Generate, e ela não é a mesma da API.
+        </>
+      )}
     </p>
   );
 }

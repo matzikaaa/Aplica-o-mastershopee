@@ -17,7 +17,7 @@ import {
 } from "@mastershopee/integrations";
 import { waitUntil } from "@vercel/functions";
 import { getIntegrationEnv } from "@/lib/integration-env";
-import { shopeePushUrl } from "@/lib/shopee-push-url";
+import { shopeePushKey, shopeePushUrl } from "@/lib/shopee-push-url";
 
 export const maxDuration = 30;
 
@@ -59,7 +59,8 @@ export async function POST(request: Request) {
   const rawBody = await request.text();
 
   const env = getIntegrationEnv();
-  if (!env.SHOPEE_PARTNER_KEY) {
+  const { chave, origem } = shopeePushKey();
+  if (!chave) {
     return NextResponse.json({ error: "Shopee não configurada neste ambiente." }, { status: 503 });
   }
 
@@ -67,8 +68,11 @@ export async function POST(request: Request) {
     pushUrl: shopeePushUrl(),
     rawBody,
     authorization: request.headers.get("authorization"),
-    partnerKey: env.SHOPEE_PARTNER_KEY,
-    encoding: env.SHOPEE_KEY_ENCODING ?? "raw",
+    partnerKey: chave,
+    // A chave gerada para push é usada como está. A escolha de leitura existe
+    // para o `partner_key` da API, cujo formato o console exibe de um jeito
+    // ambíguo; não há motivo para ela valer sobre uma chave de outra origem.
+    encoding: origem === "push" ? "raw" : (env.SHOPEE_KEY_ENCODING ?? "raw"),
   });
 
   const envelope = parseShopeePush(rawBody);
@@ -89,9 +93,24 @@ export async function POST(request: Request) {
       processingError:
         `Assinatura não confere. Esperada começa com ${verificacao.esperadaPrefixo}, ` +
         `recebida com ${verificacao.recebidaPrefixo || "(vazia)"}. ` +
-        `Base usada: ${shopeePushUrl()} — confira se é exatamente a URL cadastrada no console da Shopee.`,
+        `Base usada: ${shopeePushUrl()}. ` +
+        (origem === "api"
+          ? "Assinada com SHOPEE_PARTNER_KEY, a chave da API — mas o console gera uma Live Push Partner Key " +
+            "própria para os pushes. Clique em Generate lá e configure SHOPEE_PUSH_PARTNER_KEY na Vercel."
+          : "Confira se a URL é exatamente a cadastrada e se a Live Push Partner Key é a mesma."),
     });
-    return NextResponse.json({ error: "assinatura inválida" }, { status: 401 });
+
+    // 2xx mesmo recusando, de propósito.
+    //
+    // A verificação da URL no console da Shopee manda um push de teste e exige
+    // resposta 2xx — responder 401 reprova a verificação e trava o cadastro
+    // antes mesmo de haver uma chave configurada. E, fora da verificação, um
+    // não-2xx só agenda três reenvios do mesmo aviso recusado.
+    //
+    // Não é afrouxamento: push sem assinatura válida não vira pedido, não toca
+    // em conta e não dispara nada. Ele só é registrado, que é o que permite
+    // consertar a configuração vendo a causa em vez de adivinhando.
+    return NextResponse.json({ ok: true, aceito: false, motivo: "assinatura inválida" });
   }
 
   if (!envelope) {
