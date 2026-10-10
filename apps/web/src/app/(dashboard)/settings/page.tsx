@@ -69,8 +69,17 @@ export default async function SettingsPage() {
                     <Badge variant="outline">{m.role}</Badge>
                   </div>
                 ))}
+                {/* O limite é o de usuários, não o de contas de marketplace —
+                    o método errado fazia a linha mostrar "—" para todo plano. */}
                 <p className="pt-2 text-xs text-muted-foreground">
-                  Limite do plano: {members.length} / {permissions.getMarketplaceLimit() === -1 ? "∞" : "—"} usuário(s)
+                  Limite do plano: {members.length} /{" "}
+                  {permissions.getTeamMemberLimit() === -1 ? "ilimitado" : permissions.getTeamMemberLimit()} usuário(s)
+                </p>
+                {/* Dito com todas as letras: o plano vende mais de um usuário e
+                    ainda não há como convidar. Esconder isso só adia a mesma
+                    descoberta para um cliente que já pagou. */}
+                <p className="text-xs text-muted-foreground">
+                  O convite de novos usuários está em desenvolvimento. Por enquanto, cada workspace tem um acesso.
                 </p>
               </CardContent>
             </Card>

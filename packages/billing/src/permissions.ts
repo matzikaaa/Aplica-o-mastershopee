@@ -103,6 +103,11 @@ export class PlanPermissionService {
     return allow();
   }
 
+  /** Limite de usuários do plano; -1 é ilimitado. */
+  getTeamMemberLimit(): number {
+    return this.plan.limits.teamMembers;
+  }
+
   canAddTeamMember(): PermissionResult {
     const limit = this.plan.limits.teamMembers;
     if (isUnlimited(limit) || this.ctx.teamMemberCount < limit) return allow();

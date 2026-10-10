@@ -28,9 +28,9 @@ const PLAN_HIGHLIGHTS: Record<string, string[]> = {
   SCALE: [
     "Até 10 contas por marketplace",
     "Volume de pedidos ilimitado",
-    "Múltiplos usuários e permissões",
+    "Múltiplos usuários e permissões (em breve)",
     "Suporte prioritário",
-    "Recursos e integrações premium",
+    "Histórico de relatórios de 36 meses",
   ],
 };
 
