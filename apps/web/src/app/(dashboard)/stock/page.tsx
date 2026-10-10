@@ -117,7 +117,10 @@ export default async function StockPage() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <SummaryCard label="Produtos controlados" value={String(items.length)} />
+        {/* `rows`, não `items`: variações agrupadas não são produtos
+            controlados à parte, e contá-las inflava o número com SKUs de
+            saldo zero por construção. */}
+        <SummaryCard label="Produtos controlados" value={String(rows.length)} />
         <SummaryCard label="Unidades em estoque" value={totalUnits.toLocaleString("pt-BR")} />
         <SummaryCard
           label="Precisam de reposição"

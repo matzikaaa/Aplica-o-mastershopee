@@ -1,10 +1,5 @@
 import { NextResponse } from "next/server";
-import {
-  backfillMissingCostSnapshots,
-  countItemsWithUnknownCost,
-  prisma,
-  recomputeMetricsForDays,
-} from "@mastershopee/database";
+import { aplicarCustosAoHistorico, prisma } from "@mastershopee/database";
 import { requireWorkspace } from "@/lib/session";
 
 /**
@@ -24,53 +19,7 @@ import { requireWorkspace } from "@/lib/session";
 export async function POST() {
   const { workspace, user } = await requireWorkspace();
 
-  const products = await prisma.product.findMany({
-    where: { workspaceId: workspace.id, costs: { some: {} } },
-    select: {
-      id: true,
-      costs: { orderBy: { effectiveFrom: "asc" }, take: 1, select: { id: true, effectiveFrom: true } },
-    },
-  });
-
-  let backdated = 0;
-  const touchedDays = new Set<string>();
-
-  for (const product of products) {
-    const earliestCost = product.costs[0];
-    if (!earliestCost) continue;
-
-    const firstSale = await prisma.orderItem.findFirst({
-      where: { productId: product.id },
-      orderBy: { order: { orderedAt: "asc" } },
-      select: { order: { select: { orderedAt: true } } },
-    });
-    if (!firstSale) continue;
-
-    const firstSaleAt = firstSale.order.orderedAt;
-
-    // Retroagir é condicional; preencher não é.
-    //
-    // Antes, um custo que já começava antes da primeira venda fazia o laço
-    // pular o produto inteiro — inclusive o preenchimento. Só que "o custo é
-    // antigo o bastante" e "os itens já têm o custo gravado" são coisas
-    // diferentes: um custo cadastrado com data retroativa depois dos pedidos
-    // já importados deixa exatamente esse rastro, e nenhum caminho da
-    // aplicação voltava para fechá-lo. Eram itens sem custo que não tinham
-    // conserto possível, listados num aviso que não dizia quais eram.
-    if (earliestCost.effectiveFrom > firstSaleAt) {
-      await prisma.productCost.update({
-        where: { id: earliestCost.id },
-        data: { effectiveFrom: firstSaleAt },
-      });
-      backdated++;
-    }
-
-    for (const day of await backfillMissingCostSnapshots(product.id)) touchedDays.add(day);
-  }
-
-  const daysRecomputed = await recomputeMetricsForDays(workspace.id, touchedDays);
-
-  const stillMissing = await countItemsWithUnknownCost(workspace.id);
+  const { backdated, daysRecomputed, stillMissing } = await aplicarCustosAoHistorico(workspace.id);
 
   await prisma.auditLog.create({
     data: {

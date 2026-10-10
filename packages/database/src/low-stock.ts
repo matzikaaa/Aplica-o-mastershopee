@@ -29,7 +29,12 @@ export interface LowStockItem {
 export async function collectLowStock(workspaceId: string): Promise<LowStockItem[]> {
   const [items, sold] = await Promise.all([
     prisma.stockItem.findMany({
-      where: { workspaceId },
+      // Variações agrupadas ficam de fora explicitamente. Hoje elas já não
+      // disparariam — sem venda própria, a cobertura sai nula —, mas por
+      // efeito colateral do cálculo de ritmo, e um aviso diário de "SKU
+      // ZERADO" sobre embalagens que não têm estoque próprio é o tipo de
+      // ruído que ensina a ignorar o resumo inteiro.
+      where: { workspaceId, product: { stockParentId: null } },
       include: { product: { select: { name: true, sku: true } } },
     }),
     unitsSoldPerProduct(workspaceId, SALES_WINDOW_DAYS),

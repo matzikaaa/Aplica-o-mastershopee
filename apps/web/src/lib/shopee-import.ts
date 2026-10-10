@@ -162,17 +162,24 @@ export async function sincronizarNovos(
   // terminar rápido. A importação cobre o resto quando for aberta.
   const de = Math.max(desde, agora() - JANELA_SEGUNDOS);
 
+  // Marcado verdadeiro só quando a janela inteira foi percorrida e cada
+  // pedido listado foi gravado ou conferido. É a condição para avançar
+  // `lastSyncAt` — ver o fim desta função.
+  let percorreuTudo = false;
+
   try {
     const credenciais = await credenciaisDe(account, provider);
     let cursor = "";
 
-    while (Date.now() - inicio < orcamentoMs) {
-      const { orderSns, nextCursor } = await provider.listOrderIds(credenciais, de, agora(), cursor);
-      const completos = await pedidosJaCompletos(account.id, orderSns);
+    paginas: while (Date.now() - inicio < orcamentoMs) {
+      const { orderSns, statusListado, nextCursor } = await provider.listOrderIds(credenciais, de, agora(), cursor);
+      // Sem status na listagem, relê: aqui aparecer por `update_time` já é
+      // sinal de que o pedido mudou, e pular seria perder justamente a mudança.
+      const completos = await pedidosJaCompletos(account.id, orderSns, { statusListado, semStatusPula: false });
       const faltando = orderSns.filter((sn) => !completos.has(sn));
 
       for (let i = 0; i < faltando.length; i += LOTE) {
-        if (Date.now() - inicio >= orcamentoMs) break;
+        if (Date.now() - inicio >= orcamentoMs) break paginas;
         const pedidos = await provider.fetchOrdersByIds(credenciais, faltando.slice(i, i + LOTE));
         for (const pedido of pedidos) {
           await upsertNormalizedOrder(account, pedido, cache);
@@ -181,7 +188,10 @@ export async function sincronizarNovos(
         }
       }
 
-      if (!nextCursor) break;
+      if (!nextCursor) {
+        percorreuTudo = true;
+        break;
+      }
       cursor = nextCursor;
     }
   } catch (err) {
@@ -192,14 +202,21 @@ export async function sincronizarNovos(
     await recomputeMetricsForDays(account.workspaceId, [...diasTocados]);
   }
 
+  // `lastSyncAt` só avança quando a rodada percorreu a janela inteira.
+  //
+  // Erro não é a única forma de parar no meio: o orçamento de tempo também é.
+  // A versão anterior tratava as duas de forma diferente — falha segurava a
+  // janela, orçamento esgotado a empurrava para frente — e os pedidos que não
+  // deu tempo de buscar caíam fora da rodada seguinte se fossem mais velhos
+  // que a sobreposição de uma hora. Agora as duas seguram. Reler é barato,
+  // porque o que já entrou é pulado; perder não tem conserto.
   await prisma.marketplaceAccount.update({
     where: { id: account.id },
     data: erro
       ? { lastErrorMessage: erro }
-      : // `lastSyncAt` só avança quando a rodada foi até o fim sem erro: marcar
-        // depois de uma falha moveria a janela para frente e os pedidos do
-        // intervalo que não chegou a ser lido sumiriam em silêncio.
-        { status: "CONNECTED", lastSyncAt: new Date(), lastErrorMessage: null },
+      : percorreuTudo
+        ? { status: "CONNECTED", lastSyncAt: new Date(), lastErrorMessage: null }
+        : { status: "CONNECTED", lastErrorMessage: null },
   });
 
   return { gravados, erro };
@@ -216,7 +233,22 @@ export async function sincronizarAutomatico(
   account: MarketplaceAccount,
   orcamentoMs: number,
 ): Promise<{ modo: "historico" | "incremental"; gravados: number; erro: string | null }> {
-  const emAndamento = await importacaoAtual(account.id);
+  let emAndamento = await importacaoAtual(account.id);
+
+  // Lacuna maior que uma janela vira histórico, sozinha.
+  //
+  // A rodada automática olha no máximo 15 dias para trás, porque precisa
+  // terminar rápido. Uma conta que passou mais que isso sem sincronizar — cron
+  // falhando, token expirado e reconectado dias depois, vendedor de férias —
+  // teria o miolo do intervalo pulado para sempre: nem a incremental alcança,
+  // nem ninguém se lembra de abrir a importação. Abrir aqui transforma a
+  // lacuna em trabalho retomável, coberto pelas mesmas rodadas de sempre.
+  const LIMITE_LACUNA_MS = (JANELA_SEGUNDOS - 24 * 3600) * 1000;
+  const lacunaMs = account.lastSyncAt ? Date.now() - account.lastSyncAt.getTime() : 0;
+  if (lacunaMs > LIMITE_LACUNA_MS && emAndamento?.status !== "RUNNING") {
+    const dias = Math.min(365, Math.ceil(lacunaMs / (24 * 3600 * 1000)) + 1);
+    emAndamento = await abrirImportacao(account, dias);
+  }
 
   if (emAndamento && emAndamento.status === "RUNNING") {
     const antes = emAndamento.itemsProcessed;
@@ -320,10 +352,10 @@ export async function avancarImportacao(
       }
       const ate = fimDaJanela(estado, agora());
 
-      const { orderSns, nextCursor } = await provider.listOrderIds(credenciais, de, ate, estado.c);
+      const { orderSns, statusListado, nextCursor } = await provider.listOrderIds(credenciais, de, ate, estado.c);
 
       // A pergunta barata antes do gasto caro.
-      const completos = await pedidosJaCompletos(account.id, orderSns);
+      const completos = await pedidosJaCompletos(account.id, orderSns, { statusListado, semStatusPula: true });
       const faltando = orderSns.filter((sn) => !completos.has(sn));
 
       let paradoNoMeio = false;

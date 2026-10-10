@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma, recordStockMovement } from "@mastershopee/database";
+import { prisma, recordStockMovement, resolveStockTarget } from "@mastershopee/database";
 import { requireWorkspace } from "@/lib/session";
 
 const entrySchema = z.object({
@@ -28,12 +28,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Produto não encontrado." }, { status: 404 });
   }
 
+  // Entrada numa variação agrupada vai para a base, multiplicada.
+  //
+  // Depois de agrupado, o saldo próprio da variação não é lido por ninguém: as
+  // vendas descontam da base, a tela esconde a linha, o alerta não olha. Uma
+  // entrada gravada ali sumiria — dez caixas de três recebidas, e o estoque da
+  // base parado onde estava. Ler "10" como dez embalagens da variação é o que
+  // o SKU quer dizer: LAVANDROLL-3 é um pacote de três.
+  const alvo = await resolveStockTarget(product.id);
+  const unidades = parsed.data.units * alvo.multiplicador;
+
   const balance = await recordStockMovement({
     workspaceId: workspace.id,
-    productId: product.id,
+    productId: alvo.productId,
     type: "PURCHASE_IN",
-    units: parsed.data.units,
-    note: parsed.data.note,
+    units: unidades,
+    note:
+      alvo.productId === product.id
+        ? parsed.data.note
+        : [`${parsed.data.units} × ${alvo.multiplicador} recebidos como ${product.name}`, parsed.data.note]
+            .filter(Boolean)
+            .join(" — "),
     createdByUserId: user.id,
   });
 
@@ -43,10 +58,20 @@ export async function POST(request: Request) {
       userId: user.id,
       action: "stock.entry",
       entityType: "Product",
-      entityId: product.id,
-      metadata: { units: parsed.data.units, balanceAfter: balance },
+      entityId: alvo.productId,
+      metadata: {
+        units: unidades,
+        balanceAfter: balance,
+        ...(alvo.productId !== product.id ? { recebidoComo: product.id, embalagens: parsed.data.units } : {}),
+      },
     },
   });
 
-  return NextResponse.json({ ok: true, balance });
+  return NextResponse.json({
+    ok: true,
+    balance,
+    // A tela precisa saber que a entrada foi parar em outro produto, senão o
+    // saldo que ela mostra depois não bate com o que a pessoa digitou.
+    ...(alvo.productId !== product.id ? { creditadoNaBase: true, unidades } : {}),
+  });
 }

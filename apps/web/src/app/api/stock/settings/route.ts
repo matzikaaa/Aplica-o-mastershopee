@@ -21,15 +21,21 @@ export async function POST(request: Request) {
 
   const product = await prisma.product.findFirst({
     where: { id: parsed.data.productId, workspaceId: workspace.id },
-    select: { id: true },
+    select: { id: true, stockParentId: true },
   });
   if (!product) {
     return NextResponse.json({ error: "Produto não encontrado." }, { status: 404 });
   }
 
-  await ensureStockItem(workspace.id, product.id);
+  // Prazo de fornecedor e margem de segurança são da mercadoria, não da
+  // embalagem: numa variação agrupada eles valem para a base, que é onde o
+  // saldo e o alerta moram. Gravar na variação produziria uma configuração
+  // que nada lê.
+  const alvoId = product.stockParentId ?? product.id;
+
+  await ensureStockItem(workspace.id, alvoId);
   await prisma.stockItem.update({
-    where: { productId: product.id },
+    where: { productId: alvoId },
     data: {
       supplierName: parsed.data.supplierName?.trim() || null,
       leadTimeDays: parsed.data.leadTimeDays,

@@ -11,6 +11,7 @@ import {
 } from "./shopee-key";
 import {
   normalizeShopeeOrder,
+  normalizeShopeeStatus,
   type ShopeeEscrowRaw,
   type ShopeeOrderDetailRaw,
 } from "./shopee-orders";
@@ -870,9 +871,22 @@ export class ShopeeProvider implements MarketplaceProvider {
     to: number,
     cursor: string,
     pageSize = 50,
-  ): Promise<{ orderSns: string[]; nextCursor: string | null }> {
+  ): Promise<{
+    orderSns: string[];
+    /**
+     * Status atual de cada pedido, já normalizado, quando a Shopee o devolve.
+     *
+     * É o que permite pular com segurança um pedido já gravado: "está
+     * completo no banco" não basta, porque um pedido entregue ainda pode virar
+     * devolução depois do repasse. Comparar o status listado com o gravado
+     * separa "nada mudou" de "mudou e precisa ser relido" ao custo zero de um
+     * campo a mais na mesma chamada.
+     */
+    statusListado: Map<string, NormalizedOrder["status"]>;
+    nextCursor: string | null;
+  }> {
     const list = await this.shopRequest<{
-      order_list?: { order_sn: string }[];
+      order_list?: { order_sn: string; order_status?: string }[];
       more?: boolean;
       next_cursor?: string;
     }>("/api/v2/order/get_order_list", credentials, {
@@ -880,11 +894,19 @@ export class ShopeeProvider implements MarketplaceProvider {
       time_from: String(from),
       time_to: String(to),
       page_size: String(pageSize),
+      response_optional_fields: "order_status",
       ...(cursor ? { cursor } : {}),
     });
 
+    const pedidos = list.order_list ?? [];
+    const statusListado = new Map<string, NormalizedOrder["status"]>();
+    for (const p of pedidos) {
+      if (p.order_status) statusListado.set(p.order_sn, normalizeShopeeStatus(p.order_status));
+    }
+
     return {
-      orderSns: (list.order_list ?? []).map((o) => o.order_sn),
+      orderSns: pedidos.map((o) => o.order_sn),
+      statusListado,
       nextCursor: list.more && list.next_cursor ? list.next_cursor : null,
     };
   }

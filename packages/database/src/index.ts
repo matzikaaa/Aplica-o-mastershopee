@@ -65,6 +65,8 @@ export { pedidosJaCompletos } from "./order-known";
 
 export { vendasSemCusto, type VendaSemCusto } from "./unknown-cost-report";
 
+export { aplicarCustosAoHistorico } from "./apply-costs-to-history";
+
 export { collectLowStock, markLowStockNotified, type LowStockItem } from "./low-stock";
 
 export {

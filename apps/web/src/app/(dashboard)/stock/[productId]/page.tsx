@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ArrowLeft, History } from "lucide-react";
 import { prisma, unitsSoldPerProduct, type StockMovementType } from "@mastershopee/database";
 import { averageDailySales, calculateStockCoverage, projectStockoutDate } from "@mastershopee/inventory";
@@ -26,9 +26,14 @@ export default async function StockDetailPage({ params }: { params: { productId:
   // §8 — scope by workspace, never trust the id in the URL on its own.
   const product = await prisma.product.findFirst({
     where: { id: params.productId, workspaceId: workspace.id },
-    select: { id: true, name: true, sku: true },
+    select: { id: true, name: true, sku: true, stockParentId: true },
   });
   if (!product) notFound();
+
+  // Variação agrupada não tem extrato próprio: as vendas dela baixam da base.
+  // Mostrar aqui o histórico vazio do SKU seria dizer "nada aconteceu" sobre
+  // um produto que vende todo dia.
+  if (product.stockParentId) redirect(`/stock/${product.stockParentId}`);
 
   const [item, movements, sold] = await Promise.all([
     prisma.stockItem.findUnique({ where: { productId: product.id } }),
