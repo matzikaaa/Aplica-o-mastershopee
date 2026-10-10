@@ -128,13 +128,17 @@ export async function GET(request: Request, { params }: { params: { marketplace:
       }
     }
 
-    // A fila continua sendo tentada para os marketplaces que dependem do
-    // worker; sem Redis ela lança, e isso não é motivo para desfazer uma
-    // conexão que deu certo.
-    try {
-      await marketplaceSyncQueue.add("initial-full-sync", { marketplaceAccountId: account.id, type: "FULL" });
-    } catch (queueErr) {
-      captureError(queueErr, { marketplace, workspaceId: verified.workspaceId, route: "integrations.callback.enqueue" });
+    // A fila fica para os marketplaces que dependem do worker. A Shopee não
+    // passa por ela: a importação acima já cobre, e enfileirar também faria,
+    // no dia em que houvesse Redis, duas varreduras concorrentes da mesma
+    // conta com travas diferentes. Sem Redis a fila lança, e isso não é
+    // motivo para desfazer uma conexão que deu certo.
+    if (marketplace !== "SHOPEE") {
+      try {
+        await marketplaceSyncQueue.add("initial-full-sync", { marketplaceAccountId: account.id, type: "FULL" });
+      } catch (queueErr) {
+        captureError(queueErr, { marketplace, workspaceId: verified.workspaceId, route: "integrations.callback.enqueue" });
+      }
     }
 
     return NextResponse.redirect(new URL("/integrations?connected=1", request.url));

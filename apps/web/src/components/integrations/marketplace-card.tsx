@@ -43,23 +43,53 @@ export function MarketplaceCard({
 }) {
   const router = useRouter();
   const [confirmDisconnect, setConfirmDisconnect] = useState<string | null>(null);
+  const [sincronizando, setSincronizando] = useState<string | null>(null);
+  const [retorno, setRetorno] = useState<{ tipo: "ok" | "erro"; texto: string } | null>(null);
 
-  async function disconnect(accountId: string) {
-    await fetch(`/api/integrations/${slug}/disconnect`, {
+  /**
+   * As duas ações leem a resposta. Antes, nenhuma lia: um 500 recarregava a
+   * tela como se tudo tivesse dado certo, e "Sincronizar agora" não fazia
+   * nada em produção sem que ninguém conseguisse perceber.
+   */
+  async function chamar(caminho: string, accountId: string) {
+    const res = await fetch(`/api/integrations/${slug}/${caminho}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ accountId }),
     });
-    router.refresh();
+    const dados = (await res.json().catch(() => ({}))) as { error?: string; gravados?: number };
+    if (!res.ok) throw new Error(dados.error ?? `Falha (${res.status}).`);
+    return dados;
+  }
+
+  async function disconnect(accountId: string) {
+    setRetorno(null);
+    try {
+      await chamar("disconnect", accountId);
+      router.refresh();
+    } catch (err) {
+      setRetorno({ tipo: "erro", texto: err instanceof Error ? err.message : "Falha ao desconectar." });
+    }
   }
 
   async function syncNow(accountId: string) {
-    await fetch(`/api/integrations/${slug}/sync`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accountId }),
-    });
-    router.refresh();
+    setSincronizando(accountId);
+    setRetorno(null);
+    try {
+      const dados = await chamar("sync", accountId);
+      setRetorno({
+        tipo: "ok",
+        texto:
+          dados.gravados && dados.gravados > 0
+            ? `${dados.gravados} pedido(s) atualizado(s).`
+            : "Tudo em dia — nenhum pedido novo desde a última sincronização.",
+      });
+      router.refresh();
+    } catch (err) {
+      setRetorno({ tipo: "erro", texto: err instanceof Error ? err.message : "Falha ao sincronizar." });
+    } finally {
+      setSincronizando(null);
+    }
   }
 
   return (
@@ -69,6 +99,18 @@ export function MarketplaceCard({
         {!configured && <Badge variant="outline">Configuração pendente</Badge>}
       </CardHeader>
       <CardContent className="space-y-3">
+        {retorno && (
+          <p
+            role={retorno.tipo === "erro" ? "alert" : "status"}
+            className={
+              retorno.tipo === "erro"
+                ? "rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+                : "rounded-md border border-success/30 bg-success/10 px-3 py-2 text-xs text-success"
+            }
+          >
+            {retorno.texto}
+          </p>
+        )}
         {accounts.length === 0 && (
           <p className="text-sm text-muted-foreground">
             {configured ? "Nenhuma conta conectada." : "Aguardando credenciais de parceiro (ver README de integrações)."}
@@ -86,8 +128,13 @@ export function MarketplaceCard({
             <div className="flex items-center gap-2">
               <Badge variant={STATUS_CONFIG[account.status].variant}>{STATUS_CONFIG[account.status].label}</Badge>
               {(account.status === "CONNECTED" || account.status === "ERROR") && (
-                <Button size="sm" variant="outline" onClick={() => syncNow(account.id)}>
-                  Sincronizar agora
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => syncNow(account.id)}
+                  disabled={sincronizando !== null}
+                >
+                  {sincronizando === account.id ? "Sincronizando..." : "Sincronizar agora"}
                 </Button>
               )}
               {account.status === "TOKEN_EXPIRED" && (
