@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 const FAQS = [
   {
     q: "Preciso ter conta em todos os marketplaces?",
-    a: "Não. Conecte apenas os marketplaces que você já usa — Shopee, Mercado Livre, SHEIN e/ou TikTok Shop. Você pode adicionar mais depois.",
+    a: "Hoje a integração automática é com a Shopee. Mercado Livre, SHEIN e TikTok Shop estão em desenvolvimento — e, enquanto isso, dá para importar os relatórios desses marketplaces por planilha.",
   },
   {
     q: "Como vocês calculam o lucro líquido?",

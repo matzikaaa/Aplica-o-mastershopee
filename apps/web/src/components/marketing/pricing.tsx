@@ -12,7 +12,7 @@ const PLAN_TAGLINES: Record<string, string> = {
 
 const PLAN_HIGHLIGHTS: Record<string, string[]> = {
   STARTER: [
-    "1 conta por marketplace (Shopee, ML, SHEIN, TikTok Shop)",
+    "1 conta Shopee (Mercado Livre, SHEIN e TikTok Shop em breve)",
     "Dashboard completo de lucro líquido",
     "Gestão de custos com histórico",
     "Relatórios básicos",

@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swa
 export const metadata: Metadata = {
   title: "Mastershopee — Central financeira para vendedores de marketplaces",
   description:
-    "Conecte Shopee, Mercado Livre, SHEIN e TikTok Shop e descubra automaticamente quanto você realmente lucra.",
+    "Conecte sua loja Shopee e descubra automaticamente quanto você realmente lucra — taxas, custos e lucro líquido por pedido.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

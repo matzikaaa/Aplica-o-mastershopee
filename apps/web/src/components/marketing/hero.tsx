@@ -3,7 +3,7 @@ import { ArrowRight, PlayCircle } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { DashboardMockup } from "./dashboard-mockup";
 
-const MARKETPLACES = ["Shopee", "Mercado Livre", "SHEIN", "TikTok Shop"];
+import { MARKETPLACES_DISPONIVEIS, MARKETPLACES_EM_BREVE, listaDisponiveis } from "@/lib/marketplaces-disponiveis";
 
 export function Hero() {
   return (
@@ -21,8 +21,8 @@ export function Hero() {
           Descubra quanto você <span className="text-primary">realmente lucra</span> nos marketplaces
         </h1>
         <p className="mx-auto mt-6 max-w-2xl text-balance text-lg text-muted-foreground animate-slide-up">
-          Conecte Shopee, Mercado Livre, SHEIN e TikTok Shop e acompanhe faturamento, taxas, anúncios e
-          lucro líquido automaticamente — sem planilhas.
+          Conecte sua loja {listaDisponiveis()} e acompanhe faturamento, taxas e lucro líquido
+          automaticamente — sem planilhas.
         </p>
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row animate-slide-up">
           <Link href="/register" className={buttonVariants({ size: "lg", className: "gap-2" })}>
@@ -33,9 +33,14 @@ export function Hero() {
           </a>
         </div>
         <div className="mt-10 flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-sm text-muted-foreground animate-fade-in">
-          {MARKETPLACES.map((m) => (
-            <span key={m} className="font-medium">
+          {MARKETPLACES_DISPONIVEIS.map((m) => (
+            <span key={m} className="font-medium text-foreground">
               {m}
+            </span>
+          ))}
+          {MARKETPLACES_EM_BREVE.map((m) => (
+            <span key={m} className="font-medium opacity-60">
+              {m} <span className="text-xs font-normal">· em breve</span>
             </span>
           ))}
         </div>

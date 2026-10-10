@@ -12,9 +12,9 @@ export default function SobrePage() {
         taxas, anúncios, impostos e devoluções.
       </p>
       <p className="text-muted-foreground">
-        Conectamos suas contas de Shopee, Mercado Livre, SHEIN e TikTok Shop através das APIs oficiais de
-        cada plataforma e calculamos o lucro líquido real — por pedido, por produto e por marketplace —
-        sempre mostrando a conta por trás de cada número.
+        Conectamos sua loja Shopee pela API oficial e calculamos o lucro líquido real — por pedido, por
+        produto e por marketplace —, sempre mostrando a conta por trás de cada número. Mercado Livre, SHEIN
+        e TikTok Shop entram por planilha enquanto a integração automática deles não fica pronta.
       </p>
     </article>
   );
