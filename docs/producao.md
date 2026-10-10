@@ -28,6 +28,12 @@ configurado, que é mapa de infraestrutura para quem estiver olhando.
 
 ## Stripe
 
+> **Passo zero, antes de tudo abaixo:** configure `ACESSO_CORTESIA_EMAILS` com
+> o seu e-mail na Vercel. Enquanto o Stripe não está configurado, o teste grátis
+> não vence — não faz sentido bloquear quem não tem como pagar. No momento em
+> que `STRIPE_SECRET_KEY` entra, ele passa a vencer de verdade, e o seu
+> workspace, que nasceu como teste, seria bloqueado junto com os outros.
+
 1. Crie os produtos e preços no Stripe (mensal e anual de cada plano).
 2. Grave os ids em `Plan.stripePriceIdMonthly` / `stripePriceIdYearly`.
 3. Registre o webhook apontando para `https://SEU-DOMINIO/api/webhooks/stripe`
@@ -35,6 +41,13 @@ configurado, que é mapa de infraestrutura para quem estiver olhando.
    `customer.subscription.updated`, `customer.subscription.deleted` e
    `invoice.payment_failed`.
 4. Copie o signing secret para `STRIPE_WEBHOOK_SECRET`.
+
+### Teste grátis
+
+Todo workspace nasce com 14 dias de teste. O vencimento é calculado na hora
+da leitura (`statusEfetivo`), não por um agendador: comparar datas não falha,
+não atrasa e não depende do cron. Nos três últimos dias aparece uma faixa
+avisando, porque cliente surpreendido no momento de pagar cancela.
 
 O `change-plan` **nunca** grava o plano — quem grava é o webhook, depois do
 pagamento. Se o webhook não estiver configurado, o cliente paga e não recebe

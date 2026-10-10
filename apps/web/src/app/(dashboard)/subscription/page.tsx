@@ -1,5 +1,6 @@
 import { prisma } from "@mastershopee/database";
 import { PLAN_CATALOG, PLAN_ORDER, isUnlimited, type PlanCode } from "@mastershopee/billing";
+import { statusDeAcesso } from "@/lib/billing-context";
 import { requireWorkspace } from "@/lib/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +30,9 @@ export default async function SubscriptionPage({ searchParams }: { searchParams:
 
   const planCode = (subscription?.plan.code ?? "STARTER") as PlanCode;
   const plan = PLAN_CATALOG[planCode];
-  const status = subscription?.status ?? "incomplete";
+  // Mesma regra do bloqueio: a tela não pode dizer "Em teste" para quem o
+  // painel acabou de barrar por teste vencido.
+  const status = await statusDeAcesso(workspace.id, subscription);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
