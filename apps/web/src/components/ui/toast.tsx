@@ -50,12 +50,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ push }}>
       {children}
-      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2">
+      {/* Anunciado pelo leitor de tela: um aviso que só aparece na tela passa
+          em silêncio para quem não a vê — inclusive o erro de pagamento. */}
+      <div aria-live="polite" className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2">
         {toasts.map((t) => {
           const Icon = icons[t.type];
           return (
             <div
               key={t.id}
+              role={t.type === "error" ? "alert" : "status"}
               className={cn(
                 "flex w-80 items-start gap-3 rounded-lg border bg-card p-4 shadow-lg animate-slide-up",
                 toneClasses[t.type],
@@ -66,7 +69,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
                 <p className="text-sm font-medium">{t.title}</p>
                 {t.description && <p className="mt-0.5 text-xs text-muted-foreground">{t.description}</p>}
               </div>
-              <button onClick={() => dismiss(t.id)} className="text-muted-foreground hover:text-foreground">
+              <button onClick={() => dismiss(t.id)} aria-label="Fechar aviso" className="text-muted-foreground hover:text-foreground">
                 <X className="h-4 w-4" />
               </button>
             </div>

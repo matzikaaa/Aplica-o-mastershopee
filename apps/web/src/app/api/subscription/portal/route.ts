@@ -31,11 +31,17 @@ export async function POST(request: Request) {
   }
 
   const baseUrl = process.env.APP_URL ?? process.env.NEXTAUTH_URL ?? new URL(request.url).origin;
-  const session = await getStripe().billingPortal.sessions.create({
-    customer: subscription.providerCustomerId,
-    return_url: `${baseUrl}/subscription`,
-    locale: "pt-BR",
-  });
-
-  return NextResponse.json({ ok: true, url: session.url });
+  try {
+    const session = await getStripe().billingPortal.sessions.create({
+      customer: subscription.providerCustomerId,
+      return_url: `${baseUrl}/subscription`,
+      locale: "pt-BR",
+    });
+    return NextResponse.json({ ok: true, url: session.url });
+  } catch {
+    return NextResponse.json(
+      { error: "Não foi possível abrir a cobrança no sistema de pagamento. Tente de novo em instantes." },
+      { status: 502 },
+    );
+  }
 }

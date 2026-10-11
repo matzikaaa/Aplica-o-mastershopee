@@ -106,9 +106,22 @@ async function handle(event: Stripe.Event): Promise<void> {
       // período da assinatura.
       const item = sub.items?.data?.[0];
 
+      // O plano segue o preço cobrado. Sem isto, uma troca de plano feita na
+      // assinatura existente (pela tela ou pelo portal do Stripe) cobrava o
+      // preço novo e deixava o acesso no plano antigo.
+      const priceId = item?.price?.id;
+      const plano = priceId
+        ? await prisma.plan.findFirst({
+            where: { OR: [{ stripePriceIdMonthly: priceId }, { stripePriceIdYearly: priceId }] },
+          })
+        : null;
+
       await prisma.subscription.update({
         where: { id: existing.id },
         data: {
+          ...(plano
+            ? { planId: plano.id, interval: plano.stripePriceIdYearly === priceId ? "yearly" : "monthly" }
+            : {}),
           status: event.type === "customer.subscription.deleted" ? "canceled" : mapStripeStatus(sub.status),
           cancelAtPeriodEnd: sub.cancel_at_period_end,
           currentPeriodStart: item ? new Date(item.current_period_start * 1000) : undefined,
