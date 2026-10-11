@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@mastershopee/database";
 import { verifyPassword } from "./password";
 import { isAllowed } from "./rate-limit";
+import { ehAdminDaPlataforma } from "./platform-admin";
 
 /**
  * NextAuth v4 configuration. CredentialsProvider forces JWT sessions (a
@@ -54,7 +55,8 @@ export const authOptions: AuthOptions = {
           email: user.email,
           name: user.name,
           image: user.avatarUrl ?? undefined,
-          isSuperAdmin: user.isSuperAdmin,
+          // Vai para o token, que é o que o middleware confere em /admin.
+          isSuperAdmin: ehAdminDaPlataforma(user),
         };
       },
     }),

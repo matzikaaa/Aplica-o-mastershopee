@@ -2,12 +2,14 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@mastershopee/database";
 import { authOptions } from "./auth";
+import { ehAdminDaPlataforma } from "./platform-admin";
 
 export async function getCurrentUser() {
   const session = await getServerSession(authOptions);
   const userId = (session?.user as { id?: string } | undefined)?.id;
   if (!userId) return null;
-  return prisma.user.findUnique({ where: { id: userId } });
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  return user && { ...user, isSuperAdmin: ehAdminDaPlataforma(user) };
 }
 
 export async function requireUser() {

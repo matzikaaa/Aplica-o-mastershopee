@@ -15,13 +15,16 @@ export default async function IntegrationsPage({
 }: {
   searchParams: { error?: string; reason?: string; connected?: string; message?: string; marketplace?: string };
 }) {
-  const { workspace } = await requireWorkspace();
+  const { workspace, user } = await requireWorkspace();
   const env = getIntegrationEnv();
   const [permissions, accounts] = await Promise.all([
     getPlanPermissionService(workspace.id),
     prisma.marketplaceAccount.findMany({ where: { workspaceId: workspace.id } }),
   ]);
   const limit = permissions.getMarketplaceLimit();
+  const shopeeConectada = accounts.some(
+    (a) => a.marketplace === "SHOPEE" && a.status !== "DISCONNECTED" && a.status !== "NOT_CONNECTED",
+  );
   const marketplaces = Object.keys(MARKETPLACE_LABELS) as MarketplaceType[];
 
   return (
@@ -75,16 +78,8 @@ export default async function IntegrationsPage({
         </div>
       )}
 
-      {/* Only when partner credentials exist: before that the card would be a
-          button that can only ever say "não configurado". */}
-      {isProviderConfigured("SHOPEE", env) && <ShopeeDiagnose />}
-      {isProviderConfigured("SHOPEE", env) && (
-        <>
-          <ShopeeImport />
-          <ShopeePreview />
-        </>
-      )}
-
+      {/* Conectar vem primeiro: é a única ação que o cliente novo tem para
+          fazer aqui, e ela estava abaixo de três painéis técnicos. */}
       <div className="grid gap-4 sm:grid-cols-2">
         {marketplaces.map((m) => (
           <MarketplaceCard
@@ -104,6 +99,23 @@ export default async function IntegrationsPage({
           />
         ))}
       </div>
+
+      {/* O histórico só faz sentido com uma loja conectada de verdade — antes
+          disso o botão só pode responder "conecte primeiro". */}
+      {isProviderConfigured("SHOPEE", env) && shopeeConectada && <ShopeeImport />}
+
+      {/* Ferramentas de operação, não de cliente. O diagnóstico testa as
+          credenciais de PARCEIRO, que só o dono da plataforma tem; a prévia
+          mostra a resposta crua da API. Para um vendedor as duas são ruído na
+          tela onde ele deveria só conectar a loja — e a prévia ainda expõe um
+          formato de dado que não é dele para entender. */}
+      {isProviderConfigured("SHOPEE", env) && user.isSuperAdmin && (
+        <div className="space-y-4 border-t border-border pt-6">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ferramentas de operação</p>
+          <ShopeeDiagnose />
+          <ShopeePreview />
+        </div>
+      )}
     </div>
   );
 }

@@ -25,6 +25,7 @@ configurado, que é mapa de infraestrutura para quem estiver olhando.
 | `SHOPEE_*` | Integração | Sem dados de venda |
 | `WHATSAPP_TEMPLATE_MORNING` | Template com resultado **e** estoque (7 parâmetros) | Cai no template de 6, e o estoque some da mensagem |
 | `SENTRY_DSN` | Monitoramento (opcional) | Erro de cliente só aparece se ele reclamar |
+| `ADMIN_EMAILS` | Seu e-mail (vírgula entre vários) | O diagnóstico da Shopee e o painel `/admin` somem até para você — são ferramentas de operação e não aparecem para clientes |
 
 ## Stripe
 

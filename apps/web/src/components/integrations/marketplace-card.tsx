@@ -96,7 +96,9 @@ export function MarketplaceCard({
     <Card>
       <CardHeader className="flex-row items-center justify-between space-y-0">
         <CardTitle className="text-base font-semibold text-foreground">{name}</CardTitle>
-        {!configured && <Badge variant="outline">Configuração pendente</Badge>}
+        {/* Para o cliente, o que importa é se dá para usar — não que faltam
+            credenciais de parceiro, que é assunto do dono da plataforma. */}
+        {!configured && <Badge variant="outline">Em breve</Badge>}
       </CardHeader>
       <CardContent className="space-y-3">
         {retorno && (
@@ -113,7 +115,17 @@ export function MarketplaceCard({
         )}
         {accounts.length === 0 && (
           <p className="text-sm text-muted-foreground">
-            {configured ? "Nenhuma conta conectada." : "Aguardando credenciais de parceiro (ver README de integrações)."}
+            {configured ? (
+              "Nenhuma conta conectada."
+            ) : (
+              <>
+                A integração automática está em desenvolvimento. Enquanto isso, os pedidos entram por planilha em{" "}
+                <a href="/import" className="font-medium text-primary hover:underline">
+                  Importar
+                </a>
+                .
+              </>
+            )}
           </p>
         )}
         {accounts.map((account) => (
