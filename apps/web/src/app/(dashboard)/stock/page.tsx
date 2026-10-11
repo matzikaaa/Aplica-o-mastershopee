@@ -185,7 +185,7 @@ export default async function StockPage() {
                       <span className={item.quantity <= 0 ? "text-destructive" : undefined}>{item.quantity}</span>
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">
-                      {velocity > 0 ? velocity.toFixed(1) : "—"}
+                      {velocity > 0 ? velocity.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "—"}
                     </td>
                     <td className="px-4 py-3 text-right tabular-nums">
                       {coverage.daysOfCover === null ? (

@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { cn, formatPercent } from "@/lib/utils";
 
 export interface MarketplaceRateOption {
   marketplace: MarketplaceType;
@@ -186,7 +186,7 @@ export function PriceCalculator({ options }: { options: MarketplaceRateOption[] 
               <div className="text-sm font-medium">{MARKETPLACE_LABELS[m]}</div>
               <div className="mt-0.5 text-xs text-muted-foreground">
                 {opt?.rates
-                  ? `${Number(opt.rates.commissionPercent).toFixed(1)}% de comissão`
+                  ? `${formatPercent(Number(opt.rates.commissionPercent), 1, false)} de comissão`
                   : "sem histórico"}
               </div>
             </button>
@@ -361,11 +361,11 @@ function ResultPanel({ result, mode }: { result: CalcResult | null; mode: "margi
           </p>
           {isMargin ? (
             <p className="mt-1 text-sm text-muted-foreground">
-              Lucro estimado: <span className="font-medium text-foreground">{brl(profit)}</span> ({margin.toFixed(2)}%)
+              Lucro estimado: <span className="font-medium text-foreground">{brl(profit)}</span> ({formatPercent(margin, 2, false)})
             </p>
           ) : (
             <p className="mt-1 text-sm text-muted-foreground">
-              Margem: <span className={cn("font-medium", margin < 0 ? "text-destructive" : "text-foreground")}>{margin.toFixed(2)}%</span>
+              Margem: <span className={cn("font-medium", margin < 0 ? "text-destructive" : "text-foreground")}>{formatPercent(margin, 2, false)}</span>
             </p>
           )}
         </div>
@@ -376,7 +376,7 @@ function ResultPanel({ result, mode }: { result: CalcResult | null; mode: "margi
             <>
               <Row
                 label="Descontos percentuais"
-                value={`${Number(result.data.percentualDeductionsPercent.toString()).toFixed(2)}%`}
+                value={formatPercent(Number(result.data.percentualDeductionsPercent.toString()), 2, false)}
               />
               <Row label="Preço mínimo (lucro zero)" value={brl(result.data.minimumPrice.toFixed(2))} muted />
             </>
@@ -661,7 +661,7 @@ function ScheduleResultPanel({ result, mode }: { result: ScheduleResult | null; 
           <p className="mt-1 text-sm text-muted-foreground">
             Margem:{" "}
             <span className={cn("font-medium", margin < 0 ? "text-destructive" : "text-foreground")}>
-              {margin.toFixed(2)}%
+              {formatPercent(margin, 2, false)}
             </span>
           </p>
         </div>

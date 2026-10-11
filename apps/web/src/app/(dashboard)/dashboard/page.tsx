@@ -21,7 +21,8 @@ import { IncompleteCostBanner } from "@/components/dashboard/incomplete-cost-ban
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
-import { formatCurrency, formatPercent } from "@/lib/utils";
+import { formatCurrency, formatMultiplo, formatPercent } from "@/lib/utils";
+import { nomeDoMarketplace } from "@mastershopee/shared";
 
 export default async function DashboardPage({
   searchParams,
@@ -124,7 +125,8 @@ export default async function DashboardPage({
         />
         <MetricCard
           label="Margem líquida"
-          value={formatPercent(current.marginPercent)}
+          // Nível, não variação: sem o "+", que sugeria margem subindo.
+          value={formatPercent(current.marginPercent, 1, false)}
           tooltip="Lucro líquido dividido pelo faturamento."
         />
         <MetricCard
@@ -136,7 +138,7 @@ export default async function DashboardPage({
         <MetricCard label="Gastos com ADS" value={formatCurrency(current.adSpend)} tooltip="Investimento em publicidade atribuído aos pedidos do período." />
         <MetricCard
           label="ROAS"
-          value={current.adSpend > 0 ? `${(current.grossRevenue / current.adSpend).toFixed(1)}x` : "—"}
+          value={current.adSpend > 0 ? formatMultiplo(current.grossRevenue / current.adSpend) : "—"}
           tooltip="Retorno sobre o investimento em anúncios: faturamento / gasto com ADS."
         />
         <MetricCard
@@ -201,7 +203,7 @@ export default async function DashboardPage({
               <div key={p.productId} className="flex items-center justify-between text-sm">
                 <div>
                   <p className="font-medium">{p.name}</p>
-                  <p className="text-xs text-muted-foreground">{p.unitsSold} unidades · margem {formatPercent(p.marginPercent)}</p>
+                  <p className="text-xs text-muted-foreground">{p.unitsSold} unidades · margem {formatPercent(p.marginPercent, 1, false)}</p>
                 </div>
                 <div className="flex items-center gap-1 font-medium text-destructive">
                   <TrendingDown className="h-3.5 w-3.5" />
@@ -225,11 +227,11 @@ export default async function DashboardPage({
         <CardContent className="space-y-3">
           {marketplaceBreakdown.map((m) => (
             <div key={m.marketplace} className="flex items-center gap-3 text-sm">
-              <span className="w-32 shrink-0 font-medium">{m.marketplace}</span>
+              <span className="w-32 shrink-0 font-medium">{nomeDoMarketplace(m.marketplace)}</span>
               <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                 <div className="h-full rounded-full bg-primary" style={{ width: `${m.sharePercent}%` }} />
               </div>
-              <span className="w-16 shrink-0 text-right text-muted-foreground">{m.sharePercent.toFixed(0)}%</span>
+              <span className="w-16 shrink-0 text-right text-muted-foreground">{formatPercent(m.sharePercent, 0, false)}</span>
               <span className="w-28 shrink-0 text-right font-medium">{formatCurrency(m.grossRevenue)}</span>
             </div>
           ))}

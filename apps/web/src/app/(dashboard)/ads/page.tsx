@@ -11,7 +11,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { ManualAdSpendDialog } from "@/components/ads/manual-ad-spend-dialog";
 import { DeleteCampaignButton } from "@/components/ads/delete-campaign-button";
 import { Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from "@/components/ui/table";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, formatMultiplo } from "@/lib/utils";
 
 /**
  * §18-19: never renders an ad number the operator did not either measure or
@@ -123,7 +123,7 @@ export default async function AdsPage() {
                   </TableCell>
                   <TableCell>{formatCurrency(row.total)}</TableCell>
                   <TableCell>{row.revenue > 0 ? formatCurrency(row.revenue) : "—"}</TableCell>
-                  <TableCell>{row.roas === null ? "—" : `${row.roas.toFixed(2)}x`}</TableCell>
+                  <TableCell>{row.roas === null ? "—" : formatMultiplo(row.roas, 2)}</TableCell>
                   <TableCell className="text-right">
                     <DeleteCampaignButton campaignId={row.id} name={row.name} total={formatCurrency(row.total)} />
                   </TableCell>

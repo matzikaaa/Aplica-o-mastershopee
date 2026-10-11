@@ -77,7 +77,16 @@ export function RevenueChart({ data }: { data: Point[] }) {
                 fontSize: 12,
               }}
             />
-            <Area type="monotone" dataKey={metric} stroke={active.color} strokeWidth={2} fill="url(#chartFill)" />
+            {/* `name` é o que o balão mostra. Sem ele, a Recharts usa a chave do
+                dado — e o vendedor lia "grossRevenue" em cima do gráfico. */}
+            <Area
+              type="monotone"
+              dataKey={metric}
+              name={active.label}
+              stroke={active.color}
+              strokeWidth={2}
+              fill="url(#chartFill)"
+            />
           </AreaChart>
         </ResponsiveContainer>
       </CardContent>

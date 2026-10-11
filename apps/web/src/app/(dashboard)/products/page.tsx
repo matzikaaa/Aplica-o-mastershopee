@@ -90,7 +90,7 @@ export default async function ProductsPage({ searchParams }: { searchParams: { p
                     <TableCell className={p.netProfit < 0 ? "text-destructive" : "text-success"}>
                       {formatCurrency(p.netProfit)}
                     </TableCell>
-                    <TableCell>{formatPercent(p.marginPercent)}</TableCell>
+                    <TableCell>{formatPercent(p.marginPercent, 1, false)}</TableCell>
                     <TableCell>
                       {p.unitsWithoutCost > 0 ? (
                         <Badge variant="outline" title={`${p.unitsWithoutCost} unidade(s) vendida(s) sem custo cadastrado`}>

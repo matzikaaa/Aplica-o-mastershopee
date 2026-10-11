@@ -74,7 +74,7 @@ export default async function StockDetailPage({ params }: { params: { productId:
 
       <div className="grid gap-4 sm:grid-cols-4">
         <Stat label="Saldo atual" value={`${quantity} un.`} highlight={quantity <= 0} />
-        <Stat label="Venda/dia (30d)" value={velocity > 0 ? velocity.toFixed(1) : "—"} />
+        <Stat label="Venda/dia (30d)" value={velocity > 0 ? velocity.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : "—"} />
         <Stat
           label="Cobertura"
           value={coverage.daysOfCover === null ? "—" : `${Math.floor(coverage.daysOfCover)} dias`}

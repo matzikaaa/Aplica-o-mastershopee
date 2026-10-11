@@ -1,3 +1,4 @@
+import { ORDER_STATUS_LABELS, nomeDoMarketplace } from "@mastershopee/shared";
 import { notFound } from "next/navigation";
 import Decimal from "decimal.js";
 import { prisma } from "@mastershopee/database";
@@ -5,7 +6,7 @@ import { financialEngine } from "@mastershopee/financial-engine";
 import { requireWorkspace } from "@/lib/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatPercent, formatCurrency, formatDate } from "@/lib/utils";
 
 export default async function OrderDetailPage({ params }: { params: { id: string } }) {
   const { workspace } = await requireWorkspace();
@@ -34,6 +35,11 @@ export default async function OrderDetailPage({ params }: { params: { id: string
     { label: "Descontos", value: breakdown.discounts, negative: true },
     { label: "Comissão", value: breakdown.commission, negative: true },
     { label: "Taxas do marketplace", value: breakdown.marketplaceFees, negative: true },
+    // O frete pago pelo vendedor entrava na conta e não aparecia na lista: a
+    // soma das linhas não batia com o lucro mostrado logo abaixo, justo na
+    // tela que existe para provar o número. Toda parcela que o cálculo usa
+    // tem que estar visível aqui, ou a prova vira um enigma.
+    { label: "Frete pago por você", value: breakdown.shipping, negative: true },
     { label: "ADS", value: breakdown.adSpend, negative: true },
     { label: "Produto", value: breakdown.productCost, negative: true },
     { label: "Embalagem", value: breakdown.packaging, negative: true },
@@ -48,10 +54,10 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Pedido {order.externalOrderId}</h1>
           <p className="text-sm text-muted-foreground">
-            {order.marketplace} · {formatDate(order.orderedAt)}
+            {nomeDoMarketplace(order.marketplace)} · {formatDate(order.orderedAt)}
           </p>
         </div>
-        <Badge variant="outline">{order.status}</Badge>
+        <Badge variant="outline">{ORDER_STATUS_LABELS[order.status] ?? order.status}</Badge>
       </div>
 
       <Card>
@@ -74,7 +80,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
               {formatCurrency(breakdown.netProfit)}
             </span>
           </div>
-          <p className="pt-1 text-xs text-muted-foreground">Margem: {breakdown.marginPercent}%</p>
+          <p className="pt-1 text-xs text-muted-foreground">Margem: {formatPercent(breakdown.marginPercent, 2, false)}</p>
         </CardContent>
       </Card>
 

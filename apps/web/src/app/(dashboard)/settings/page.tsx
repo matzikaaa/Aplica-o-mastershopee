@@ -8,6 +8,7 @@ import { AccountDataSection } from "@/components/settings/account-data";
 import { EmailTest } from "@/components/settings/email-test";
 import { DailyEmailForm } from "@/components/settings/daily-email-form";
 import { Badge } from "@/components/ui/badge";
+import { WORKSPACE_ROLE_LABELS } from "@mastershopee/shared";
 
 export default async function SettingsPage() {
   const { user, workspace, role } = await requireWorkspace();
@@ -66,7 +67,7 @@ export default async function SettingsPage() {
                       <p className="font-medium">{m.user.name}</p>
                       <p className="text-xs text-muted-foreground">{m.user.email}</p>
                     </div>
-                    <Badge variant="outline">{m.role}</Badge>
+                    <Badge variant="outline">{WORKSPACE_ROLE_LABELS[m.role] ?? m.role}</Badge>
                   </div>
                 ))}
                 {/* O limite é o de usuários, não o de contas de marketplace —

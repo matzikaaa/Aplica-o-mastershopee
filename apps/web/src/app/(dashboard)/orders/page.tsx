@@ -1,3 +1,4 @@
+import { ORDER_STATUS_LABELS, nomeDoMarketplace } from "@mastershopee/shared";
 import Link from "next/link";
 import { prisma } from "@mastershopee/database";
 import { resolveDateRange, type DateRangePreset } from "@mastershopee/shared";
@@ -12,15 +13,6 @@ import { Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from "@
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { ShoppingCart } from "lucide-react";
 
-const STATUS_LABELS: Record<string, string> = {
-  CREATED: "Criado",
-  PAID: "Pago",
-  SHIPPED: "Enviado",
-  DELIVERED: "Entregue",
-  CANCELED: "Cancelado",
-  REFUNDED: "Reembolsado",
-  RETURNED: "Devolvido",
-};
 
 export default async function OrdersPage({ searchParams }: { searchParams: { period?: string; page?: string } }) {
   const { workspace } = await requireWorkspace();
@@ -88,13 +80,13 @@ export default async function OrdersPage({ searchParams }: { searchParams: { per
                       </Link>
                     </TableCell>
                     <TableCell>{formatDate(order.orderedAt)}</TableCell>
-                    <TableCell>{order.marketplace}</TableCell>
+                    <TableCell>{nomeDoMarketplace(order.marketplace)}</TableCell>
                     <TableCell>{formatCurrency(order.grossAmount.toString())}</TableCell>
                     <TableCell className={result.netProfit.isNegative() ? "text-destructive" : "text-success"}>
                       {formatCurrency(result.netProfit.toFixed())}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{STATUS_LABELS[order.status] ?? order.status}</Badge>
+                      <Badge variant="outline">{ORDER_STATUS_LABELS[order.status] ?? order.status}</Badge>
                     </TableCell>
                   </TableRow>
                 );

@@ -2,7 +2,7 @@ import { prisma } from "@mastershopee/database";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from "@/components/ui/table";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, formatPercent } from "@/lib/utils";
 
 export default async function AdminOverviewPage() {
   const [userCount, workspaceCount, subscriptions, syncErrors, webhookErrors, unconfiguredCosts] = await Promise.all([
@@ -39,7 +39,7 @@ export default async function AdminOverviewPage() {
           { label: "ARR", value: formatCurrency(arr) },
           { label: "Em trial", value: trialing.length.toString() },
           { label: "Pagamento pendente", value: pastDue.length.toString() },
-          { label: "Churn", value: `${churnRate.toFixed(1)}%` },
+          { label: "Churn", value: formatPercent(churnRate, 1, false) },
           { label: "Assinaturas ativas", value: active.length.toString() },
         ].map((m) => (
           <Card key={m.label}>

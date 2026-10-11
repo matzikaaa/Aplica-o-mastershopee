@@ -1,5 +1,35 @@
 export type MarketplaceType = "SHOPEE" | "MERCADO_LIVRE" | "SHEIN" | "TIKTOK_SHOP";
 
+/**
+ * Nome do status do pedido como o vendedor o lê.
+ *
+ * Morava dentro da página de lista, e por isso a página de detalhe mostrava o
+ * enum cru — "Entregue" numa tela, "DELIVERED" na seguinte, para o mesmo
+ * pedido. Rótulo que aparece em mais de uma tela mora aqui.
+ */
+export const ORDER_STATUS_LABELS: Record<string, string> = {
+  CREATED: "Criado",
+  PAID: "Pago",
+  SHIPPED: "Enviado",
+  DELIVERED: "Entregue",
+  CANCELED: "Cancelado",
+  REFUNDED: "Reembolsado",
+  RETURNED: "Devolvido",
+};
+
+/** Papel de cada pessoa no workspace, como aparece em Configurações → Usuários. */
+export const WORKSPACE_ROLE_LABELS: Record<string, string> = {
+  OWNER: "Dono",
+  ADMIN: "Administrador",
+  MEMBER: "Membro",
+  VIEWER: "Somente leitura",
+};
+
+/** Nome do marketplace para a tela; o enum cru nunca deve aparecer para o vendedor. */
+export function nomeDoMarketplace(m: string): string {
+  return (MARKETPLACE_LABELS as Record<string, string>)[m] ?? m;
+}
+
 export const MARKETPLACE_LABELS: Record<MarketplaceType, string> = {
   SHOPEE: "Shopee",
   MERCADO_LIVRE: "Mercado Livre",
