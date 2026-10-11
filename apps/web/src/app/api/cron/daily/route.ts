@@ -3,6 +3,7 @@ import {
   collectLowStock,
   markLowStockNotified,
   prisma,
+  runAlertChecks,
 } from "@mastershopee/database";
 import {
   isWhatsappConfigured,
@@ -60,6 +61,13 @@ export async function GET(request: Request) {
   // Sincroniza antes de relatar: um relatório montado sobre dados de
   // anteontem diz um número errado com toda a confiança.
   const sincronizacao = await sincronizarPedidos();
+
+  // Os alertas dependem das métricas de ontem, que a sincronização acabou de
+  // recalcular. Antes só o worker os verificava — e sem worker hospedado a
+  // tela de Alertas aceitava regras que nunca disparavam.
+  const alertas = await runAlertChecks().catch((err: unknown) => ({
+    erro: err instanceof Error ? err.message : "falha ao verificar alertas",
+  }));
 
   const configs = await prisma.whatsappConfiguration.findMany({
     where: { dailyReportEnabled: true, verified: true },
@@ -183,6 +191,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     sincronizacao,
+    alertas,
     whatsapp: { workspaces: configs.length, resultados },
     email,
   });

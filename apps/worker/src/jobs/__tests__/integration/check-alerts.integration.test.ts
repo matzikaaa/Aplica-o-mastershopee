@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { prisma } from "@mastershopee/database";
-import { runAlertChecks } from "../../check-alerts.js";
+import { prisma, runAlertChecks } from "@mastershopee/database";
 import { cleanupTestWorkspace, createTestWorkspace } from "./helpers.js";
 
 function yesterdayMidnight(): Date {
@@ -86,7 +85,7 @@ describe("runAlertChecks — real Postgres (§24-25)", () => {
 
     const product = await prisma.product.create({ data: { workspaceId: workspace.id, sku: "SKU-LOSS", name: "Produto no Prejuízo" } });
     await prisma.alertRule.create({
-      data: { workspaceId: workspace.id, type: "NEGATIVE_MARGIN_PRODUCT", config: {}, channels: ["in_app"] },
+      data: { workspaceId: workspace.id, type: "NEGATIVE_MARGIN_PRODUCT", severity: "CRITICAL", config: {}, channels: ["in_app"] },
     });
     await prisma.productMetric.create({
       data: {
@@ -108,5 +107,60 @@ describe("runAlertChecks — real Postgres (§24-25)", () => {
     expect(events).toHaveLength(1);
     expect(events[0]!.severity).toBe("CRITICAL");
     expect(events[0]!.title).toContain("Produto no Prejuízo");
+  });
+
+  // A tela de Alertas grava o limite em `threshold`. O verificador lia só
+  // `minMarginPercent`, comparava a margem com undefined e nunca disparava.
+  it("fires NET_MARGIN_BELOW for a rule saved the way the alerts screen saves it (config.threshold)", async () => {
+    const { workspace } = await createTestWorkspace();
+    workspaceId = workspace.id;
+
+    await prisma.alertRule.create({
+      data: { workspaceId: workspace.id, type: "NET_MARGIN_BELOW", config: { threshold: 20 }, channels: ["in_app"] },
+    });
+    await prisma.dailyMetric.create({
+      data: { workspaceId: workspace.id, date: yesterdayMidnight(), grossRevenue: "1000.00", netProfit: "50.00", orderCount: 3 },
+    });
+
+    await runAlertChecks();
+
+    const events = await prisma.alertEvent.findMany({ where: { workspaceId: workspace.id } });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.message).toBe("Margem de ontem: 5,0% (limite: 20,0%).");
+  });
+
+  it("uses the severity the seller chose for the rule, and writes money the way the seller reads it", async () => {
+    const { workspace } = await createTestWorkspace();
+    workspaceId = workspace.id;
+
+    await prisma.alertRule.create({
+      data: { workspaceId: workspace.id, type: "AD_SPEND_THRESHOLD", severity: "INFORMATIVE", config: { threshold: 500 }, channels: ["in_app"] },
+    });
+    await prisma.dailyMetric.create({
+      data: { workspaceId: workspace.id, date: yesterdayMidnight(), grossRevenue: "3000.00", netProfit: "300.00", adSpend: "1234.50", orderCount: 9 },
+    });
+
+    await runAlertChecks();
+
+    const events = await prisma.alertEvent.findMany({ where: { workspaceId: workspace.id } });
+    expect(events).toHaveLength(1);
+    expect(events[0]!.severity).toBe("INFORMATIVE");
+    expect(events[0]!.message).toMatch(/^ADS de ontem: R\$\s1\.234,50 \(limite: R\$\s500,00\)\.$/);
+  });
+
+  it("skips a rule with no usable threshold instead of comparing against nothing", async () => {
+    const { workspace } = await createTestWorkspace();
+    workspaceId = workspace.id;
+
+    await prisma.alertRule.create({
+      data: { workspaceId: workspace.id, type: "DAILY_REVENUE_ABOVE", config: {}, channels: ["in_app"] },
+    });
+    await prisma.dailyMetric.create({
+      data: { workspaceId: workspace.id, date: yesterdayMidnight(), grossRevenue: "1000.00", netProfit: "100.00", orderCount: 3 },
+    });
+
+    await runAlertChecks();
+
+    expect(await prisma.alertEvent.count({ where: { workspaceId: workspace.id } })).toBe(0);
   });
 });

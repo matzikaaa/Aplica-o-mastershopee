@@ -7,14 +7,9 @@ import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Label, Select, Input } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
+import { ALERT_RULE_LABELS } from "@mastershopee/shared";
 
-const RULE_TYPES = [
-  { value: "NEGATIVE_MARGIN_PRODUCT", label: "Produto com margem negativa" },
-  { value: "AD_SPEND_THRESHOLD", label: "Gasto com ADS acima de um valor" },
-  { value: "NET_MARGIN_BELOW", label: "Margem líquida abaixo de um percentual" },
-  { value: "MARKETPLACE_SYNC_FAILED", label: "Marketplace parou de sincronizar" },
-  { value: "DAILY_REVENUE_ABOVE", label: "Faturamento diário acima de um valor" },
-];
+const RULE_TYPES = Object.entries(ALERT_RULE_LABELS).map(([value, label]) => ({ value, label }));
 
 export function CreateAlertDialog() {
   const [open, setOpen] = useState(false);
@@ -69,7 +64,9 @@ export function CreateAlertDialog() {
           </div>
           {needsThreshold && (
             <div className="space-y-1.5">
-              <Label htmlFor="threshold">Valor limite</Label>
+              {/* Um campo só para percentual e para reais: sem a unidade, "10"
+                  tanto pode ser 10% quanto R$ 10,00. */}
+              <Label htmlFor="threshold">{type === "NET_MARGIN_BELOW" ? "Margem mínima (%)" : "Valor limite (R$)"}</Label>
               <Input id="threshold" name="threshold" type="number" step="0.01" required />
             </div>
           )}

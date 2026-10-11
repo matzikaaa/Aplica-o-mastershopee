@@ -1,4 +1,5 @@
 import { prisma } from "@mastershopee/database";
+import { descreverRegraDeAlerta } from "@mastershopee/shared";
 import { requireWorkspace } from "@/lib/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,7 @@ import { Bell } from "lucide-react";
 
 const SEVERITY_VARIANT = { CRITICAL: "destructive", IMPORTANT: "warning", INFORMATIVE: "default" } as const;
 const SEVERITY_LABEL = { CRITICAL: "Críticos", IMPORTANT: "Importantes", INFORMATIVE: "Informativos" } as const;
+const SEVERITY_BADGE = { CRITICAL: "Crítico", IMPORTANT: "Importante", INFORMATIVE: "Informativo" } as const;
 
 export default async function AlertsPage() {
   const { workspace } = await requireWorkspace();
@@ -28,7 +30,11 @@ export default async function AlertsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Alertas</h1>
-          <p className="text-sm text-muted-foreground">{rules.length} regra(s) configurada(s).</p>
+          {/* Quando a regra é avaliada faz parte do combinado: sem isso, quem
+              cria "margem abaixo de 10%" às 15h espera um aviso às 15h01. */}
+          <p className="text-sm text-muted-foreground">
+            {rules.length} regra(s) configurada(s). As regras são verificadas todo dia de manhã, com os números de ontem.
+          </p>
         </div>
         <CreateAlertDialog />
       </div>
@@ -52,7 +58,7 @@ export default async function AlertsPage() {
                         <CardContent className="flex items-center justify-between p-4">
                           <div>
                             <div className="flex items-center gap-2">
-                              <Badge variant={SEVERITY_VARIANT[group.severity]}>{SEVERITY_LABEL[group.severity]}</Badge>
+                              <Badge variant={SEVERITY_VARIANT[group.severity]}>{SEVERITY_BADGE[group.severity]}</Badge>
                               <span className="font-medium">{event.title}</span>
                             </div>
                             <p className="mt-1 text-sm text-muted-foreground">{event.message}</p>
@@ -76,7 +82,7 @@ export default async function AlertsPage() {
           {rules.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma regra criada ainda.</p>}
           {rules.map((rule) => (
             <div key={rule.id} className="flex items-center justify-between border-b border-border/60 py-2 text-sm last:border-0">
-              <span>{rule.type}</span>
+              <span>{descreverRegraDeAlerta(rule.type, rule.config)}</span>
               <Badge variant={rule.isActive ? "success" : "default"}>{rule.isActive ? "Ativa" : "Inativa"}</Badge>
             </div>
           ))}

@@ -67,6 +67,8 @@ export { vendasSemCusto, type VendaSemCusto } from "./unknown-cost-report";
 
 export { aplicarCustosAoHistorico } from "./apply-costs-to-history";
 
+export { runAlertChecks } from "./alert-checks";
+
 export { collectLowStock, markLowStockNotified, type LowStockItem } from "./low-stock";
 
 export {

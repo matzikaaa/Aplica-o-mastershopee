@@ -128,7 +128,7 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
   }
 
   // Per-product rollup (§14-15, §47) — this is what the NEGATIVE_MARGIN_PRODUCT
-  // alert rule reads (see apps/worker/src/jobs/check-alerts.ts).
+  // alert rule reads (see packages/database/src/alert-checks.ts).
   const byProduct = new Map<string, { units: number; results: typeof results; hasCost: boolean }>();
   for (const order of orders) {
     for (const item of order.items) {

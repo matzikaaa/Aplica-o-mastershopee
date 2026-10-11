@@ -4,8 +4,8 @@ import { QUEUE_NAMES, type MarketplaceSyncJobData, type ComputeMetricsJobData, t
 import { runMarketplaceSync } from "./jobs/sync-marketplace.js";
 import { computeDailyMetrics } from "./jobs/compute-daily-metrics.js";
 import { runWhatsappScheduler } from "./jobs/whatsapp-scheduler.js";
-import { runAlertChecks } from "./jobs/check-alerts.js";
 import { runStockLevelChecks } from "./jobs/check-stock-levels.js";
+import { runAlertChecks } from "@mastershopee/database";
 import { processWebhookEvent } from "./jobs/process-webhook.js";
 import { registerScheduledJobs, enqueueMetricsForAllWorkspaces } from "./scheduler.js";
 
