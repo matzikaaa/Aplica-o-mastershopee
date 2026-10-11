@@ -37,6 +37,21 @@ function getTransport() {
   });
 }
 
+/**
+ * Texto vindo de fora dentro do HTML do e-mail.
+ *
+ * O nome do cadastro entrava cru: qualquer um podia cadastrar o e-mail de
+ * outra pessoa com um "nome" que fosse um link, e a vítima recebia phishing
+ * saindo do remetente oficial do app. Nome, loja e SKU são escritos por
+ * usuários ou por marketplaces — nenhum deles é HTML.
+ */
+function esc(value: unknown): string {
+  return String(value).replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+  );
+}
+
 async function send(to: string, subject: string, html: string) {
   const transport = getTransport();
   if (!transport) {
@@ -52,7 +67,7 @@ export async function sendVerificationEmail(to: string, name: string, verifyUrl:
   await send(
     to,
     "Confirme seu e-mail — Mastershopee",
-    `<p>Olá, ${name}!</p><p>Confirme seu e-mail para ativar sua conta:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p><p>O link expira em 24 horas.</p>`,
+    `<p>Olá, ${esc(name)}!</p><p>Confirme seu e-mail para ativar sua conta:</p><p><a href="${esc(verifyUrl)}">${esc(verifyUrl)}</a></p><p>O link expira em 24 horas.</p>`,
   );
 }
 
@@ -60,7 +75,7 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string) {
   await send(
     to,
     "Redefinir senha — Mastershopee",
-    `<p>Recebemos um pedido para redefinir sua senha.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>Se você não pediu isso, ignore este e-mail. O link expira em 1 hora.</p>`,
+    `<p>Recebemos um pedido para redefinir sua senha.</p><p><a href="${esc(resetUrl)}">${esc(resetUrl)}</a></p><p>Se você não pediu isso, ignore este e-mail. O link expira em 1 hora.</p>`,
   );
 }
 
@@ -75,7 +90,7 @@ export async function sendTestEmail(to: string, name: string) {
   await send(
     to,
     "Teste de envio — Mastershopee",
-    `<p>Olá, ${name}!</p>` +
+    `<p>Olá, ${esc(name)}!</p>` +
       `<p>Se você recebeu este e-mail, a entrega está funcionando: confirmação de cadastro e ` +
       `recuperação de senha vão chegar aos seus clientes.</p>` +
       `<p style="color:#666;font-size:12px">Enviado em ${new Date().toLocaleString("pt-BR")}.</p>`,
@@ -104,8 +119,8 @@ export async function sendDailyReportEmail(opts: {
 }) {
   const linha = (rotulo: string, valor: string, destaque = false) =>
     `<tr>
-       <td style="padding:6px 0;color:#555">${rotulo}</td>
-       <td style="padding:6px 0;text-align:right;font-weight:${destaque ? 700 : 400}">${valor}</td>
+       <td style="padding:6px 0;color:#555">${esc(rotulo)}</td>
+       <td style="padding:6px 0;text-align:right;font-weight:${destaque ? 700 : 400}">${esc(valor)}</td>
      </tr>`;
 
   const estoqueHtml =
@@ -116,7 +131,7 @@ export async function sendDailyReportEmail(opts: {
            ${opts.estoque
              .map(
                (i) => `<tr>
-                 <td style="padding:6px 0;font-family:ui-monospace,monospace">${i.sku}</td>
+                 <td style="padding:6px 0;font-family:ui-monospace,monospace">${esc(i.sku)}</td>
                  <td style="padding:6px 0;text-align:right;color:${i.isOutOfStock ? "#c62828" : "#555"}">
                    ${i.quantity} un · ${
                      i.isOutOfStock
@@ -135,8 +150,8 @@ export async function sendDailyReportEmail(opts: {
     opts.to,
     `Resultado de ${opts.periodo} — ${opts.workspaceName}`,
     `<div style="font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:520px;color:#111">
-       <h2 style="margin:0 0 4px;font-size:18px">Resultado de ${opts.periodo}</h2>
-       <p style="margin:0 0 20px;color:#666;font-size:14px">${opts.workspaceName}</p>
+       <h2 style="margin:0 0 4px;font-size:18px">Resultado de ${esc(opts.periodo)}</h2>
+       <p style="margin:0 0 20px;color:#666;font-size:14px">${esc(opts.workspaceName)}</p>
 
        <table style="width:100%;border-collapse:collapse;font-size:14px">
          ${linha("Faturamento", opts.faturamento)}
@@ -148,7 +163,7 @@ export async function sendDailyReportEmail(opts: {
 
        ${estoqueHtml}
 
-       <p style="margin:24px 0 0"><a href="${opts.painelUrl}" style="color:#1565c0">Ver detalhes por produto no painel</a></p>
+       <p style="margin:24px 0 0"><a href="${esc(opts.painelUrl)}" style="color:#1565c0">Ver detalhes por produto no painel</a></p>
        <p style="margin:24px 0 0;color:#999;font-size:12px">
          Para parar de receber, desative o resumo diário em Configurações.
        </p>
