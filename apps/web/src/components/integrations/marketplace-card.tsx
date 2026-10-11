@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/dialog";
 import { SyncProgress } from "./sync-progress";
 import { relativeTime } from "@/lib/utils";
@@ -129,16 +129,22 @@ export function MarketplaceCard({
           </p>
         )}
         {accounts.map((account) => (
-          <div key={account.id} className="flex items-center justify-between rounded-lg border border-border p-3">
-            <div>
-              <p className="text-sm font-medium">{account.displayName}</p>
-              <p className="text-xs text-muted-foreground">
-                {account.lastSyncAt ? `Última sincronização ${relativeTime(account.lastSyncAt)}` : "Nunca sincronizado"}
-              </p>
-              {account.status === "SYNCING" && <SyncProgress accountId={account.id} />}
+          <div key={account.id} className="space-y-3 rounded-lg border border-border p-3">
+            {/* Nome e status em cima, ações embaixo: no card de meia largura,
+                três botões ao lado do nome espremiam o texto em quatro linhas. */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium">{account.displayName}</p>
+                <p className="text-xs text-muted-foreground">
+                  {account.lastSyncAt ? `Última sincronização ${relativeTime(account.lastSyncAt)}` : "Nunca sincronizado"}
+                </p>
+                {account.status === "SYNCING" && <SyncProgress accountId={account.id} />}
+              </div>
+              <Badge variant={STATUS_CONFIG[account.status].variant} className="shrink-0">
+                {STATUS_CONFIG[account.status].label}
+              </Badge>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge variant={STATUS_CONFIG[account.status].variant}>{STATUS_CONFIG[account.status].label}</Badge>
+            <div className="flex flex-wrap items-center gap-2">
               {(account.status === "CONNECTED" || account.status === "ERROR") && (
                 <Button
                   size="sm"
@@ -150,10 +156,8 @@ export function MarketplaceCard({
                 </Button>
               )}
               {account.status === "TOKEN_EXPIRED" && (
-                <a href={`/api/integrations/${slug}/connect`}>
-                  <Button size="sm" variant="outline">
-                    Reconectar
-                  </Button>
+                <a href={`/api/integrations/${slug}/connect`} className={buttonVariants({ size: "sm", variant: "outline" })}>
+                  Reconectar
                 </a>
               )}
               <Button size="sm" variant="outline" onClick={() => setConfirmDisconnect(account.id)}>
@@ -163,11 +167,12 @@ export function MarketplaceCard({
           </div>
         ))}
 
-        {accounts.filter((a) => a.status !== "DISCONNECTED").length < limit && (
-          <a href={`/api/integrations/${slug}/connect`} className="inline-block">
-            <Button size="sm" disabled={!configured}>
-              Conectar
-            </Button>
+        {/* Botão dentro de link é HTML inválido, e o link continuava
+            navegável pelo teclado com o botão "desativado". Sem integração,
+            não há o que conectar: o texto acima já aponta a planilha. */}
+        {configured && accounts.filter((a) => a.status !== "DISCONNECTED").length < limit && (
+          <a href={`/api/integrations/${slug}/connect`} className={buttonVariants({ size: "sm" })}>
+            Conectar
           </a>
         )}
 

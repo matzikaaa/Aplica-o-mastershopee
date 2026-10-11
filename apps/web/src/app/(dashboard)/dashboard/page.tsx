@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, TrendingDown, TrendingUp } from "lucide-react";
 import { prisma, unknownCostWhere } from "@mastershopee/database";
-import { resolveDateRange, previousPeriod, type DateRangePreset, type MarketplaceType } from "@mastershopee/shared";
+import { resolveDateRange, previousPeriod, type DateRangePreset } from "@mastershopee/shared";
 import { financialEngine } from "@mastershopee/financial-engine";
 import { calculateOperationHealth } from "@mastershopee/financial-engine";
 import { requireWorkspace } from "@/lib/session";
@@ -14,7 +14,6 @@ import {
 } from "@/lib/dashboard-data";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { DateRangePicker } from "@/components/dashboard/date-range-picker";
-import { MarketplaceFilter } from "@/components/dashboard/marketplace-filter";
 import { RevenueChart } from "@/components/dashboard/revenue-chart";
 import { FinancialComposition } from "@/components/dashboard/financial-composition";
 import { IncompleteCostBanner } from "@/components/dashboard/incomplete-cost-banner";
@@ -27,11 +26,10 @@ import { nomeDoMarketplace } from "@mastershopee/shared";
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: { period?: string; marketplace?: string };
+  searchParams: { period?: string };
 }) {
   const { workspace } = await requireWorkspace();
   const period = (searchParams.period ?? "last_30_days") as DateRangePreset;
-  const marketplace = (searchParams.marketplace ?? "all") as MarketplaceType | "all";
 
   const range = resolveDateRange(period, workspace.timezone);
   // Null on "Desde o início": there is no period before everything, so the
@@ -101,10 +99,11 @@ export default async function DashboardPage({
           <h1 className="text-2xl font-semibold tracking-tight">Visão Geral</h1>
           <p className="text-sm text-muted-foreground">Quanto você vendeu, quanto lucrou e onde agir.</p>
         </div>
-        <div className="flex flex-col gap-2 sm:items-end">
-          <DateRangePicker current={period} />
-          <MarketplaceFilter current={marketplace} />
-        </div>
+        {/* Havia aqui um filtro de marketplace que só destacava a aba: nenhum
+            número do painel o recebia, e "Shopee" mostrava o total de todas as
+            lojas. Volta quando as métricas forem guardadas por marketplace; a
+            participação de cada um já aparece mais abaixo. */}
+        <DateRangePicker current={period} />
       </div>
 
       {itemsWithoutCost > 0 && <IncompleteCostBanner itemsWithoutCost={itemsWithoutCost} />}
