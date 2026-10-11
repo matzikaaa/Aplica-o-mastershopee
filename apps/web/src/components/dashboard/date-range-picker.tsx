@@ -23,6 +23,8 @@ export function DateRangePicker({ current }: { current: DateRangePreset }) {
   function setPeriod(value: DateRangePreset) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("period", value);
+    // A página 7 de um período não existe necessariamente no outro.
+    params.delete("page");
     router.push(`${pathname}?${params.toString()}`);
   }
 
