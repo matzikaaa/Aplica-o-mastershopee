@@ -35,6 +35,18 @@ export function formatMultiplo(value: number, decimals = 1): string {
   return `${new Intl.NumberFormat("pt-BR", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(value)}x`;
 }
 
+/**
+ * Data sem hora (vigência de custo): é guardada como meia-noite UTC. No fuso
+ * do Brasil essa meia-noite ainda é o dia anterior — formatar no fuso local
+ * mostraria "10/10" para um custo que vale desde 11/10, e o servidor (UTC) e
+ * o navegador discordariam na mesma tela.
+ */
+export function formatDateOnly(date: Date | string): string {
+  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" }).format(
+    new Date(date),
+  );
+}
+
 export function formatDate(date: Date | string, locale = "pt-BR"): string {
   return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric" }).format(
     new Date(date),

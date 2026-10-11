@@ -1,14 +1,11 @@
 import { prisma, unknownCostWhere, vendasSemCusto } from "@mastershopee/database";
 import { requireWorkspace } from "@/lib/session";
-import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from "@/components/ui/table";
-import { AddCostDialog } from "@/components/costs/add-cost-dialog";
+import { CostsTable } from "@/components/costs/costs-table";
 import { ImportCostsDialog } from "@/components/costs/import-costs-dialog";
 import { MergeSkusDialog } from "@/components/products/merge-skus-dialog";
 import { IncompleteCostBanner } from "@/components/dashboard/incomplete-cost-banner";
 import { UnknownCostList } from "@/components/costs/unknown-cost-list";
-import { formatCurrency, formatDate } from "@/lib/utils";
 import Link from "next/link";
 import { Receipt, TriangleAlert } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
@@ -104,48 +101,23 @@ export default async function CostsPage() {
           description="Conecte um marketplace ou use Importar planilha › Descobrir SKUs para montar o catálogo a partir dos seus próprios relatórios."
         />
       ) : (
-        <Card>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Produto</TableHead>
-                <TableHead>Custo unitário</TableHead>
-                <TableHead>Embalagem</TableHead>
-                <TableHead>Imposto</TableHead>
-                <TableHead>Vigente desde</TableHead>
-                <TableHead>Ação</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sorted.map((p) => {
-                const current = p.costs[0];
-                return (
-                  <TableRow key={p.id}>
-                    <TableCell>
-                      <p className="font-medium">{p.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {p.sku}
-                        {p.skuAliases.length > 0 && (
-                          <span title="SKUs unificados neste produto">
-                            {" "}
-                            · também {p.skuAliases.map((a) => a.sku).join(", ")}
-                          </span>
-                        )}
-                      </p>
-                    </TableCell>
-                    <TableCell>{current ? formatCurrency(current.unitCost.toString()) : "—"}</TableCell>
-                    <TableCell>{current ? formatCurrency(current.packagingCost.toString()) : "—"}</TableCell>
-                    <TableCell>{current ? `${current.taxPercent}%` : "—"}</TableCell>
-                    <TableCell>{current ? formatDate(current.effectiveFrom) : "Não cadastrado"}</TableCell>
-                    <TableCell>
-                      <AddCostDialog productId={p.id} productName={p.name} />
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Card>
+        <CostsTable
+          produtos={sorted.map((p) => {
+            const atual = p.costs[0];
+            return {
+              id: p.id,
+              sku: p.sku,
+              name: p.name,
+              aliases: p.skuAliases.map((a) => a.sku),
+              unitCost: atual ? atual.unitCost.toString() : null,
+              packagingCost: atual ? atual.packagingCost.toString() : null,
+              operationalCost: atual ? atual.operationalCost.toString() : null,
+              taxPercent: atual ? atual.taxPercent.toString() : null,
+              otherCosts: atual ? atual.otherCosts.toString() : null,
+              effectiveFrom: atual ? atual.effectiveFrom.toISOString() : null,
+            };
+          })}
+        />
       )}
     </div>
   );

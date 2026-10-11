@@ -6,12 +6,25 @@ import {
   resolveProductBySku,
 } from "@mastershopee/database";
 import { bulkCostRowSchema, type BulkImportResult } from "@mastershopee/shared";
+import { z } from "zod";
 import { requireWorkspace } from "@/lib/session";
 
 /** §17 — bulk cost import. Rows are parsed client-side (CSV/XLSX) and posted here as JSON for validation + persistence. */
 export async function POST(request: Request) {
   const { workspace, user } = await requireWorkspace();
-  const { rows } = (await request.json()) as { rows: unknown[] };
+  const body = (await request.json()) as { rows?: unknown; effectiveFrom?: unknown };
+  const rows = Array.isArray(body.rows) ? body.rows : [];
+
+  // A edição em lote escolhe a data de vigência; a planilha não manda nenhuma
+  // e continua valendo a partir de agora, como antes.
+  let effectiveFrom = new Date();
+  if (body.effectiveFrom !== undefined) {
+    const data = z.coerce.date().safeParse(body.effectiveFrom);
+    if (!data.success) {
+      return NextResponse.json({ error: "Data de vigência inválida." }, { status: 400 });
+    }
+    effectiveFrom = data.data;
+  }
 
   const result: BulkImportResult = { imported: 0, updated: 0, skipped: 0, errors: [] };
   const diasAfetados = new Set<string>();
@@ -41,7 +54,8 @@ export async function POST(request: Request) {
         packagingCost: parsed.data.packaging,
         taxPercent: parsed.data.tax,
         otherCosts: parsed.data.otherCosts,
-        effectiveFrom: new Date(),
+        operationalCost: parsed.data.operationalCost,
+        effectiveFrom,
         createdByUserId: user.id,
       },
     });

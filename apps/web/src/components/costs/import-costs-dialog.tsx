@@ -6,7 +6,7 @@ import Papa from "papaparse";
 import { Upload, Download } from "lucide-react";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import type { BulkImportResult } from "@mastershopee/shared";
+import { parseBrNumber, type BulkImportResult } from "@mastershopee/shared";
 
 export function ImportCostsDialog() {
   const [open, setOpen] = useState(false);
@@ -20,13 +20,17 @@ export function ImportCostsDialog() {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
+      transformHeader: (h) => h.replace(/^\uFEFF/, "").trim(),
       complete: async (parsed) => {
+        // O Excel em português salva "18,50" — e Number("18,50") é NaN, o que
+        // recusava todas as linhas de quem preencheu a planilha no Brasil.
+        const num = (v: string | undefined, padrao: number) => parseBrNumber(v) ?? padrao;
         const rows = (parsed.data as Record<string, string>[]).map((r) => ({
-          sku: r.SKU ?? r.sku,
-          cost: Number(r.Custo ?? r.cost),
-          packaging: Number(r.Embalagem ?? r.packaging ?? 0),
-          tax: Number(r.Imposto ?? r.tax ?? 0),
-          otherCosts: Number(r["Outros custos"] ?? r.otherCosts ?? 0),
+          sku: (r.SKU ?? r.sku ?? "").trim(),
+          cost: num(r.Custo ?? r.cost, Number.NaN),
+          packaging: num(r.Embalagem ?? r.packaging, 0),
+          tax: num(r.Imposto ?? r.tax, 0),
+          otherCosts: num(r["Outros custos"] ?? r.otherCosts, 0),
         }));
 
         const res = await fetch("/api/costs/import", {

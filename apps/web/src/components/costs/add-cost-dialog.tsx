@@ -73,7 +73,7 @@ export function AddCostDialog({ productId, productName }: { productId: string; p
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="effectiveFrom">Vigente a partir de</Label>
-              <Input id="effectiveFrom" name="effectiveFrom" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required />
+              <Input id="effectiveFrom" name="effectiveFrom" type="date" defaultValue={new Date().toLocaleDateString("sv-SE")} required />
             </div>
           </div>
           <Button type="submit" className="w-full" disabled={loading}>

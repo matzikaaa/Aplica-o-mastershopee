@@ -17,6 +17,9 @@ export const bulkCostRowSchema = z.object({
   packaging: z.number().nonnegative().default(0),
   tax: z.number().min(0).max(100).default(0),
   otherCosts: z.number().nonnegative().default(0),
+  // Opcional: a edição em lote reenvia o valor atual para não zerar o que o
+  // vendedor não mexeu. A planilha não tem essa coluna e continua valendo 0.
+  operationalCost: z.number().nonnegative().default(0),
 });
 export type BulkCostRow = z.infer<typeof bulkCostRowSchema>;
 

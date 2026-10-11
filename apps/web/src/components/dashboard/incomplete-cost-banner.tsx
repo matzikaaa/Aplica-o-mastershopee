@@ -57,7 +57,9 @@ export function IncompleteCostBanner({
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <span>
             <span className="font-medium">O lucro abaixo está maior que o real.</span>{" "}
-            {itemsWithoutCost.toLocaleString("pt-BR")} itens vendidos {scope} estão sem custo, então entram como custo
+            {itemsWithoutCost === 1
+              ? `1 item vendido ${scope} está sem custo, então entra como custo `
+              : `${itemsWithoutCost.toLocaleString("pt-BR")} itens vendidos ${scope} estão sem custo, então entram como custo `}
             zero. Custo cadastrado hoje não vale para venda de meses atrás — se o preço que você paga hoje já valia
             antes, aplique ao histórico.
           </span>
