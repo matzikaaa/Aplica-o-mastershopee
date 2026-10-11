@@ -170,6 +170,7 @@ export class FinancialCalculationEngine {
       adSpend: result.adSpend.toFixed(),
       productCost: result.productCost.toFixed(),
       packaging: result.packaging.toFixed(),
+      operational: result.operational.toFixed(),
       taxes: result.taxes.toFixed(),
       refunds: result.refunds.toFixed(),
       otherCosts: result.otherCosts.toFixed(),

@@ -121,6 +121,12 @@ model Workspace {
   dailyReportEmailTo      String?
   /// Trava de envio único por dia, sem tabela extra só para isso.
   lastDailyEmailAt        DateTime?
+
+  /// Primeiro dia cujas métricas guardadas ficaram desatualizadas e ainda
+  /// não foram recalculadas. Nulo é "tudo em dia". Recalcular o histórico
+  /// inteiro de uma vez não cabe numa função serverless; a rotina diária e a
+  /// sincronização ao abrir o painel avançam em fatias até zerar.
+  metricsRecomputeFrom    DateTime? @db.Date
 }
 
 model WorkspaceMember {
@@ -589,6 +595,15 @@ model OrderItem {
   // Cost snapshot resolved from ProductCost at order time — persisted so
   // historical profit never shifts when today's cost changes.
   unitCostSnapshot Decimal? @db.Decimal(14, 4)
+  // O resto do custo vigente na data da venda, congelado junto. Antes só o
+  // custo unitário era guardado: embalagem, custo operacional, outros custos
+  // e imposto cadastrados em Custos nunca chegavam ao lucro, e o vendedor no
+  // Simples via um lucro maior que o real. Nulo conta como zero.
+  packagingCostSnapshot   Decimal? @db.Decimal(14, 4)
+  operationalCostSnapshot Decimal? @db.Decimal(14, 4)
+  otherCostsSnapshot      Decimal? @db.Decimal(14, 4)
+  /// Percentual sobre o valor de venda do item (ex.: alíquota do Simples).
+  taxPercentSnapshot      Decimal? @db.Decimal(7, 4)
   commissionAmount Decimal  @db.Decimal(14, 4) @default(0)
   feeAmount        Decimal  @db.Decimal(14, 4) @default(0)
   adSpendAttributed Decimal @db.Decimal(14, 4) @default(0)

@@ -39,8 +39,8 @@ export function AutoSync() {
           signal: controle.signal,
         });
         if (!res.ok) return;
-        const dados = (await res.json()) as { gravados?: number };
-        if (dados.gravados && dados.gravados > 0) router.refresh();
+        const dados = (await res.json()) as { gravados?: number; recalculados?: number };
+        if ((dados.gravados ?? 0) > 0 || (dados.recalculados ?? 0) > 0) router.refresh();
       } catch {
         // Silêncio de propósito. Isto é trabalho de fundo que ninguém pediu;
         // falhar aqui não pode encher a tela de aviso. O estado real da

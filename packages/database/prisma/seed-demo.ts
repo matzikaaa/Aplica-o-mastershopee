@@ -15,7 +15,7 @@
  */
 import { PrismaClient, MarketplaceType, OrderStatus, MarketplaceAccountStatus } from "@prisma/client";
 import { randomUUID } from "node:crypto";
-import { revenueOrdersWhere } from "../src/order-status";
+import { computeDailyMetrics } from "../src/metrics";
 import { scryptSync, randomBytes } from "node:crypto";
 
 if (process.env.NODE_ENV === "production" && process.env.ALLOW_DEMO_SEED !== "true") {
@@ -243,7 +243,6 @@ async function main() {
         const commission = grossAmount * 0.14;
         const marketplaceFee = grossAmount * 0.03;
         const shipping = rand(4, 12) * quantity;
-        const tax = grossAmount * 0.06;
         const adSpend = isLossLeader ? grossAmount * 0.35 : grossAmount * rand(0.05, 0.15);
 
         const orderedAt = new Date(date);
@@ -261,7 +260,9 @@ async function main() {
             commissionAmount: commission,
             marketplaceFeeAmount: marketplaceFee,
             shippingSubsidizedByMerchant: shipping,
-            taxAmount: tax,
+            // A Shopee não informa imposto do vendedor: ele vem dos 6% do
+            // cadastro de custo, congelados no item como na sincronização.
+            taxAmount: 0,
             adSpendAttributed: adSpend,
             items: {
               create: {
@@ -271,18 +272,18 @@ async function main() {
                 quantity,
                 unitPrice,
                 unitCostSnapshot: product.cost,
+                packagingCostSnapshot: 1.5,
+                operationalCostSnapshot: 0.8,
+                otherCostsSnapshot: 0,
+                taxPercentSnapshot: 6,
                 commissionAmount: commission,
                 feeAmount: marketplaceFee,
                 adSpendAttributed: adSpend,
-                taxAmount: tax,
+                taxAmount: 0,
               },
             },
           },
         });
-
-        const productCost = product.cost * quantity + 1.5 * quantity;
-        const netProfit =
-          grossAmount - commission - marketplaceFee - shipping - tax - adSpend - productCost;
 
         await prisma.financialTransaction.create({
           data: {
@@ -297,64 +298,11 @@ async function main() {
       }
     }
 
-    // Pre-aggregate the day (mirrors what the compute-daily-metrics worker job does).
-    const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    const dayOrders = await prisma.order.findMany({
-      where: { workspaceId: workspace.id, orderedAt: { gte: startOfDay, lte: endOfDay }, ...revenueOrdersWhere },
-      include: { items: true },
-    });
-
-    let grossRevenue = 0,
-      productCost = 0,
-      commission = 0,
-      marketplaceFees = 0,
-      shippingTotal = 0,
-      adSpendTotal = 0,
-      taxes = 0;
-
-    for (const o of dayOrders) {
-      grossRevenue += Number(o.grossAmount);
-      commission += Number(o.commissionAmount);
-      marketplaceFees += Number(o.marketplaceFeeAmount);
-      shippingTotal += Number(o.shippingSubsidizedByMerchant);
-      adSpendTotal += Number(o.adSpendAttributed);
-      taxes += Number(o.taxAmount);
-      for (const item of o.items) {
-        productCost += Number(item.unitCostSnapshot ?? 0) * item.quantity;
-      }
-    }
-
-    const grossProfit = grossRevenue - productCost;
-    const netProfit = grossProfit - commission - marketplaceFees - shippingTotal - adSpendTotal - taxes;
-
-    if (dayOrders.length > 0) {
-      await prisma.dailyMetric.upsert({
-        where: { workspaceId_date: { workspaceId: workspace.id, date: startOfDay } },
-        update: {},
-        create: {
-          workspaceId: workspace.id,
-          date: startOfDay,
-          grossRevenue,
-          netRevenue: grossRevenue,
-          productCost,
-          commission,
-          marketplaceFees,
-          shipping: shippingTotal,
-          adSpend: adSpendTotal,
-          taxes,
-          refunds: 0,
-          otherCosts: 0,
-          grossProfit,
-          netProfit,
-          orderCount: dayOrders.length,
-          dataQuality: "complete",
-        },
-      });
-    }
+    // O dia é agregado pelo mesmo motor da aplicação. A soma feita à mão
+    // aqui divergia do cálculo real assim que o cálculo mudava — e o demo é o
+    // que o cliente vê antes de decidir.
+    const dia = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    await computeDailyMetrics({ workspaceId: workspace.id, date: dia });
   }
 
   // ── Stock ──────────────────────────────────────────────────────────

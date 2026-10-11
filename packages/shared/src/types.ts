@@ -64,6 +64,7 @@ export interface ProfitBreakdown {
   adSpend: string;
   productCost: string;
   packaging: string;
+  operational: string;
   taxes: string;
   refunds: string;
   otherCosts: string;

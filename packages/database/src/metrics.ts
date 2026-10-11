@@ -3,6 +3,7 @@ import { financialEngine } from "@mastershopee/financial-engine";
 import type { MarketplaceType } from "@prisma/client";
 import { prisma } from "./index";
 import { revenueOrdersWhere, unknownCostWhere } from "./order-status";
+import { calcularItem, calcularPedido, snapshotDoCusto } from "./order-profit";
 
 export interface ComputeMetricsInput {
   workspaceId: string;
@@ -33,19 +34,7 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
     include: { items: true, refunds: true },
   });
 
-  const results = orders.map((order) =>
-    financialEngine.calculateOrder({
-      grossAmount: order.grossAmount,
-      discountAmount: order.discountAmount,
-      commissionAmount: order.commissionAmount,
-      marketplaceFeeAmount: order.marketplaceFeeAmount,
-      shippingSubsidizedByMerchant: order.shippingSubsidizedByMerchant,
-      taxAmount: order.taxAmount,
-      adSpendAttributed: order.adSpendAttributed,
-      refundAmount: order.refunds.reduce((acc, r) => acc.plus(r.amount as unknown as Decimal), new Decimal(0)),
-      items: order.items.map((i) => ({ quantity: i.quantity, unitCost: i.unitCostSnapshot ?? new Decimal(0) })),
-    }),
-  );
+  const results = orders.map((order) => calcularPedido(order));
 
   const total = financialEngine.aggregate(results, workspace.currency);
 
@@ -133,14 +122,7 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
   for (const order of orders) {
     for (const item of order.items) {
       if (!item.productId) continue;
-      const itemResult = financialEngine.calculateOrder({
-        grossAmount: new Decimal(item.unitPrice).times(item.quantity),
-        commissionAmount: item.commissionAmount,
-        marketplaceFeeAmount: item.feeAmount,
-        taxAmount: item.taxAmount,
-        adSpendAttributed: item.adSpendAttributed,
-        items: [{ quantity: item.quantity, unitCost: item.unitCostSnapshot ?? new Decimal(0) }],
-      });
+      const itemResult = calcularItem(item);
       const entry = byProduct.get(item.productId) ?? { units: 0, results: [], hasCost: item.unitCostSnapshot !== null };
       entry.units += item.quantity;
       entry.results.push(itemResult);
@@ -181,6 +163,49 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
 }
 
 /**
+ * Avança o recálculo de um workspace marcado com `metricsRecomputeFrom`.
+ *
+ * Quando a regra do cálculo muda (como embalagem e imposto passarem a entrar
+ * no lucro), as métricas guardadas ficam velhas — e o painel lê as guardadas.
+ * Recalcular um histórico inteiro não cabe numa função serverless, então isto
+ * anda dentro de um prazo, guarda onde parou e é chamado de novo pela rotina
+ * diária e pela sincronização de quando o painel abre, até zerar.
+ */
+export async function recalcularMetricasPendentes(
+  workspaceId: string,
+  prazoMs: number,
+): Promise<{ dias: number; terminou: boolean }> {
+  const ws = await prisma.workspace.findUnique({
+    where: { id: workspaceId },
+    select: { metricsRecomputeFrom: true },
+  });
+  const desde = ws?.metricsRecomputeFrom;
+  if (!desde) return { dias: 0, terminou: true };
+
+  const limite = Date.now() + prazoMs;
+  // Só os dias que têm pedido: um ano de histórico tem centenas de dias
+  // vazios, e recalcular dia vazio é gastar o prazo à toa.
+  const linhas = await prisma.$queryRaw<{ dia: Date }[]>`
+    SELECT DISTINCT ("orderedAt")::date AS dia
+    FROM "Order"
+    WHERE "workspaceId" = ${workspaceId} AND "orderedAt" >= ${desde}
+    ORDER BY dia`;
+
+  let feitos = 0;
+  for (const { dia } of linhas) {
+    if (Date.now() > limite) {
+      await prisma.workspace.update({ where: { id: workspaceId }, data: { metricsRecomputeFrom: dia } });
+      return { dias: feitos, terminou: false };
+    }
+    await computeDailyMetrics({ workspaceId, date: dia.toISOString().slice(0, 10) });
+    feitos++;
+  }
+
+  await prisma.workspace.update({ where: { id: workspaceId }, data: { metricsRecomputeFrom: null } });
+  return { dias: feitos, terminou: true };
+}
+
+/**
  * Recompute a set of days, oldest first.
  *
  * Days are given as `YYYY-MM-DD` strings and de-duplicated here, so a caller
@@ -211,7 +236,14 @@ export async function backfillMissingCostSnapshots(productId: string): Promise<s
   const costs = await prisma.productCost.findMany({
     where: { productId },
     orderBy: { effectiveFrom: "asc" },
-    select: { unitCost: true, effectiveFrom: true },
+    select: {
+      unitCost: true,
+      packagingCost: true,
+      operationalCost: true,
+      otherCosts: true,
+      taxPercent: true,
+      effectiveFrom: true,
+    },
   });
   if (costs.length === 0) return [];
 
@@ -236,7 +268,9 @@ export async function backfillMissingCostSnapshots(productId: string): Promise<s
 
     await prisma.orderItem.update({
       where: { id: item.id },
-      data: { unitCostSnapshot: applicable.unitCost },
+      // O custo inteiro, não só o unitário: embalagem e imposto do mesmo
+      // registro também valiam naquela data.
+      data: snapshotDoCusto(applicable),
     });
     touchedDays.add(orderedAt.toISOString().slice(0, 10));
   }

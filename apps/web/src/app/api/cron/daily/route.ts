@@ -3,6 +3,7 @@ import {
   collectLowStock,
   markLowStockNotified,
   prisma,
+  recalcularMetricasPendentes,
   runAlertChecks,
 } from "@mastershopee/database";
 import {
@@ -61,6 +62,7 @@ export async function GET(request: Request) {
   // Sincroniza antes de relatar: um relatório montado sobre dados de
   // anteontem diz um número errado com toda a confiança.
   const sincronizacao = await sincronizarPedidos();
+  const recalculo = await recalcularPendentes();
 
   // Os alertas dependem das métricas de ontem, que a sincronização acabou de
   // recalcular. Antes só o worker os verificava — e sem worker hospedado a
@@ -191,6 +193,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     ok: true,
     sincronizacao,
+    recalculo,
     alertas,
     whatsapp: { workspaces: configs.length, resultados },
     email,
@@ -280,5 +283,28 @@ async function sincronizarPedidos() {
     });
   }
 
+  return resultado;
+}
+
+/**
+ * Métricas antigas desatualizadas por mudança na regra do cálculo, em fatias.
+ *
+ * Fatia curta e compartilhada entre os workspaces: o resto do minuto ainda
+ * precisa montar e enviar os relatórios. O que não couber hoje continua
+ * amanhã — ou antes, quando alguém abrir o painel.
+ */
+async function recalcularPendentes() {
+  const pendentes = await prisma.workspace.findMany({
+    where: { metricsRecomputeFrom: { not: null } },
+    select: { id: true, name: true },
+  });
+  const limite = Date.now() + 15_000;
+  const resultado: { workspace: string; dias: number; terminou: boolean }[] = [];
+  for (const ws of pendentes) {
+    const sobra = limite - Date.now();
+    if (sobra <= 0) break;
+    const r = await recalcularMetricasPendentes(ws.id, sobra);
+    resultado.push({ workspace: ws.name, ...r });
+  }
   return resultado;
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { prisma } from "@mastershopee/database";
+import { prisma, recalcularMetricasPendentes } from "@mastershopee/database";
 import { requireWorkspace } from "@/lib/session";
 import { importacaoAtual, sincronizarAutomatico } from "@/lib/shopee-import";
 
@@ -30,6 +30,7 @@ const INTERVALO_MS = 10 * 60 * 1000;
  * avança mesmo quando a aba que a começou foi fechada.
  */
 export async function POST() {
+  const inicio = Date.now();
   const { workspace } = await requireWorkspace();
 
   const contas = await prisma.marketplaceAccount.findMany({
@@ -65,5 +66,12 @@ export async function POST() {
   }
 
   const gravados = resultados.reduce((t, r) => t + r.gravados, 0);
-  return NextResponse.json({ ok: true, gravados, resultados });
+
+  // Métricas antigas que ficaram desatualizadas (mudança na regra do
+  // cálculo) avançam aqui também, no que sobrar do minuto: quem está com o
+  // painel aberto é quem mais precisa do número certo.
+  const sobra = 45_000 - (Date.now() - inicio);
+  const recalculo = sobra > 3_000 ? await recalcularMetricasPendentes(workspace.id, sobra) : null;
+
+  return NextResponse.json({ ok: true, gravados, resultados, recalculados: recalculo?.dias ?? 0 });
 }

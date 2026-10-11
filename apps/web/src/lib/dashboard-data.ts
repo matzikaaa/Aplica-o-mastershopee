@@ -1,5 +1,4 @@
-import { prisma, revenueOrdersWhere } from "@mastershopee/database";
-import { financialEngine } from "@mastershopee/financial-engine";
+import { calcularItem, prisma, revenueOrdersWhere } from "@mastershopee/database";
 import { costIsUnknown, type DateRange } from "@mastershopee/shared";
 import type { MarketplaceType } from "@mastershopee/database";
 import Decimal from "decimal.js";
@@ -134,14 +133,7 @@ export async function getProductRanking(workspaceId: string, range: DateRange): 
 
   for (const item of items) {
     if (!item.product) continue;
-    const result = financialEngine.calculateOrder({
-      grossAmount: new Decimal(item.unitPrice).times(item.quantity),
-      commissionAmount: item.commissionAmount,
-      marketplaceFeeAmount: item.feeAmount,
-      adSpendAttributed: item.adSpendAttributed,
-      taxAmount: item.taxAmount,
-      items: [{ quantity: item.quantity, unitCost: item.unitCostSnapshot ?? 0 }],
-    });
+    const result = calcularItem(item);
 
     const existing = byProduct.get(item.productId!) ?? {
       sku: item.product.sku,

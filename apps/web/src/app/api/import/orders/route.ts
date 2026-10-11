@@ -3,6 +3,7 @@ import {
   prisma,
   recomputeMetricsForDays,
   resolveProductBySku,
+  snapshotDoCusto,
   type MarketplaceType,
 } from "@mastershopee/database";
 import { normalizeOrderStatus, parseBrDate, parseBrNumber, type ImportSummary } from "@mastershopee/shared";
@@ -158,7 +159,8 @@ export async function POST(request: Request) {
           title: product?.name ?? skuValue,
           quantity: qty,
           unitPrice: gross / qty,
-          unitCostSnapshot: cost?.unitCost ?? null,
+          // O custo inteiro da data: embalagem e imposto também valiam.
+          ...(cost ? snapshotDoCusto(cost) : { unitCostSnapshot: null }),
           commissionAmount: commission,
           feeAmount: fee,
           taxAmount: tax,

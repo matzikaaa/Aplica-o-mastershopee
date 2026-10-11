@@ -1,7 +1,8 @@
-import { ORDER_STATUS_LABELS, nomeDoMarketplace } from "@mastershopee/shared";
+import { ORDER_STATUS_LABELS, costIsUnknown, nomeDoMarketplace } from "@mastershopee/shared";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import Decimal from "decimal.js";
-import { prisma } from "@mastershopee/database";
+import { calcularPedido, prisma } from "@mastershopee/database";
 import { financialEngine } from "@mastershopee/financial-engine";
 import { requireWorkspace } from "@/lib/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,18 +18,9 @@ export default async function OrderDetailPage({ params }: { params: { id: string
   });
   if (!order) notFound();
 
-  const result = financialEngine.calculateOrder({
-    grossAmount: order.grossAmount,
-    discountAmount: order.discountAmount,
-    commissionAmount: order.commissionAmount,
-    marketplaceFeeAmount: order.marketplaceFeeAmount,
-    shippingSubsidizedByMerchant: order.shippingSubsidizedByMerchant,
-    taxAmount: order.taxAmount,
-    adSpendAttributed: order.adSpendAttributed,
-    refundAmount: order.refunds.reduce((acc, r) => acc.plus(r.amount as unknown as Decimal), new Decimal(0)),
-    items: order.items.map((i) => ({ quantity: i.quantity, unitCost: i.unitCostSnapshot ?? new Decimal(0) })),
-  });
+  const result = calcularPedido(order);
   const breakdown = financialEngine.explain(result);
+  const itensSemCusto = order.items.filter((i) => costIsUnknown(i.unitCostSnapshot));
 
   const rows: { label: string; value: string; negative?: boolean }[] = [
     { label: "Venda", value: breakdown.grossRevenue },
@@ -43,6 +35,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
     { label: "ADS", value: breakdown.adSpend, negative: true },
     { label: "Produto", value: breakdown.productCost, negative: true },
     { label: "Embalagem", value: breakdown.packaging, negative: true },
+    { label: "Custo operacional", value: breakdown.operational, negative: true },
     { label: "Imposto", value: breakdown.taxes, negative: true },
     { label: "Reembolsos", value: breakdown.refunds, negative: true },
     { label: "Outros custos", value: breakdown.otherCosts, negative: true },
@@ -60,6 +53,26 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         <Badge variant="outline">{ORDER_STATUS_LABELS[order.status] ?? order.status}</Badge>
       </div>
 
+      {/* O lucro abaixo trata custo desconhecido como zero e taxa não
+          liberada como zero. As duas coisas fazem o número parecer melhor do
+          que é — a tela que existe para provar o lucro tem que dizer isso. */}
+      {(itensSemCusto.length > 0 || order.feesAreEstimated) && (
+        <div className="space-y-1 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm">
+          {itensSemCusto.length > 0 && (
+            <p>
+              {itensSemCusto.length === 1 ? "1 item sem custo cadastrado" : `${itensSemCusto.length} itens sem custo cadastrado`}
+              : o lucro real é menor que o mostrado.{" "}
+              <Link href="/costs" className="font-medium text-primary hover:underline">
+                Cadastrar custo
+              </Link>
+            </p>
+          )}
+          {order.feesAreEstimated && (
+            <p>A Shopee ainda não liberou as taxas deste pedido. Comissão e taxas entram quando o repasse sair.</p>
+          )}
+        </div>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Como calculamos o lucro deste pedido</CardTitle>
@@ -68,7 +81,17 @@ export default async function OrderDetailPage({ params }: { params: { id: string
           {rows.map((row) => (
             <div key={row.label} className="flex items-center justify-between border-b border-border/60 pb-2.5 text-sm last:border-0">
               <span className="text-muted-foreground">{row.label}</span>
-              <span className={row.negative ? "font-medium text-destructive" : "font-medium"}>
+              {/* Zero não é perda: em vermelho, "R$ 0,00" competia por atenção
+                  com o que realmente pesou no pedido. */}
+              <span
+                className={
+                  Number(row.value) === 0
+                    ? "font-medium text-muted-foreground"
+                    : row.negative
+                      ? "font-medium text-destructive"
+                      : "font-medium"
+                }
+              >
                 {row.negative && Number(row.value) !== 0 ? "-" : ""}
                 {formatCurrency(row.value)}
               </span>
@@ -95,6 +118,11 @@ export default async function OrderDetailPage({ params }: { params: { id: string
                 <p className="font-medium">{item.title}</p>
                 <p className="text-xs text-muted-foreground">
                   {item.externalSku} · {item.quantity}x {formatCurrency(item.unitPrice.toString())}
+                  {costIsUnknown(item.unitCostSnapshot) ? (
+                    <span className="text-warning"> · custo não cadastrado</span>
+                  ) : (
+                    <> · custo {formatCurrency(new Decimal(item.unitCostSnapshot!.toString()).toFixed(2))}/un</>
+                  )}
                 </p>
               </div>
               <span className="font-medium">{formatCurrency(new Decimal(item.unitPrice).times(item.quantity).toFixed(2))}</span>

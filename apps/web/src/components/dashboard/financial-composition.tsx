@@ -14,14 +14,26 @@ interface Props {
 
 /** §13 — waterfall showing exactly where every real went, faturamento → lucro líquido. */
 export function FinancialComposition(props: Props) {
-  const rows = [
-    { label: "Faturamento", value: props.grossRevenue, isTotal: true },
+  const parcelas = [
     { label: "Comissões", value: -props.commission },
     { label: "Taxas do marketplace", value: -props.marketplaceFees },
     { label: "ADS", value: -props.adSpend },
     { label: "Custo dos produtos", value: -props.productCost },
     { label: "Fretes", value: -props.shipping },
     { label: "Impostos", value: -props.taxes },
+  ];
+  // O que o lucro desconta e não tem linha própria aqui: embalagem, custo
+  // operacional, descontos, reembolsos, outros custos. Sem esta linha a
+  // cascata não fechava no lucro — e o vendedor procurava o dinheiro que
+  // sumia entre o último custo e o resultado.
+  const restante =
+    props.netProfit - props.grossRevenue - parcelas.reduce((acc, p) => acc + p.value, 0);
+  const rows: { label: string; value: number; isTotal?: boolean }[] = [
+    { label: "Faturamento", value: props.grossRevenue, isTotal: true },
+    ...parcelas,
+    ...(Math.abs(restante) >= 0.005
+      ? [{ label: "Embalagem, descontos e outros", value: restante }]
+      : []),
     { label: "Lucro líquido", value: props.netProfit, isTotal: true },
   ];
 

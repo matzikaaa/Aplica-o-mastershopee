@@ -37,6 +37,7 @@ export {
 export {
   computeDailyMetrics,
   recomputeMetricsForDays,
+  recalcularMetricasPendentes,
   backfillMissingCostSnapshots,
   type ComputeMetricsInput,
 } from "./metrics";
@@ -69,6 +70,17 @@ export { aplicarCustosAoHistorico } from "./apply-costs-to-history";
 
 export { runAlertChecks } from "./alert-checks";
 
+export {
+  entradaFinanceiraDoPedido,
+  calcularPedido,
+  calcularItem,
+  snapshotDoCusto,
+  type PedidoParaCalculo,
+  type ItemParaCalculo,
+  type ItemComTaxas,
+  type SnapshotDeCusto,
+} from "./order-profit";
+
 export { collectLowStock, markLowStockNotified, type LowStockItem } from "./low-stock";
 
 export {
@@ -87,6 +99,7 @@ export {
 export {
   upsertNormalizedOrder,
   resolveCostSnapshot,
+  resolverCustoVigente,
   createSyncCache,
   type SyncCache,
   type UpsertOrderInput,

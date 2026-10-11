@@ -2,6 +2,7 @@ import Decimal from "decimal.js";
 import { prisma } from "./index";
 import { ensureProductForOrderItem } from "./product-upsert";
 import { applySaleToStock, reverseSaleFromStock, type AlvoDeEstoque } from "./stock";
+import { snapshotDoCusto, type SnapshotDeCusto } from "./order-profit";
 
 /**
  * A gravação de um pedido do marketplace, num lugar só.
@@ -67,7 +68,7 @@ export interface UpsertOrderAccount {
  */
 export interface SyncCache {
   products: Map<string, string | null>;
-  costs: Map<string, Decimal>;
+  costs: Map<string, SnapshotDeCusto>;
   /** Onde cada SKU baixa estoque, e com que multiplicador. */
   alvos: Map<string, AlvoDeEstoque>;
 }
@@ -78,14 +79,14 @@ export function createSyncCache(): SyncCache {
 
 /**
  * Resolve o ProductCost vigente em `orderedAt` — nunca o custo atual (§16).
- * Produto sem histórico de custo devolve zero, que o dashboard mostra como
+ * Produto sem histórico de custo devolve null, que o dashboard mostra como
  * "sem custo" em vez de tratar como se fosse de graça (§96).
  */
-export async function resolveCostSnapshot(
+export async function resolverCustoVigente(
   productId: string,
   orderedAt: Date,
   cache?: SyncCache,
-): Promise<Decimal | null> {
+): Promise<SnapshotDeCusto | null> {
   // Dia basta como chave: o custo é vigente por data, não por hora.
   const key = `${productId}:${orderedAt.toISOString().slice(0, 10)}`;
   const cached = cache?.costs.get(key);
@@ -101,9 +102,18 @@ export async function resolveCostSnapshot(
   // duas coisas levam a lucros diferentes. Gravar zero aqui fazia o pedido
   // entrar com margem cheia e, pior, ficava invisível para o backfill — que
   // procura por null — então cadastrar o custo depois não recalculava nada.
-  const valor = cost ? new Decimal(cost.unitCost) : null;
+  const valor = cost ? snapshotDoCusto(cost) : null;
   if (valor) cache?.costs.set(key, valor);
   return valor;
+}
+
+/** Só o custo unitário — para quem ainda precisa só dele. */
+export async function resolveCostSnapshot(
+  productId: string,
+  orderedAt: Date,
+  cache?: SyncCache,
+): Promise<Decimal | null> {
+  return (await resolverCustoVigente(productId, orderedAt, cache))?.unitCostSnapshot ?? null;
 }
 
 export async function upsertNormalizedOrder(
@@ -156,7 +166,7 @@ export async function upsertNormalizedOrder(
       cache?.products.set(item.externalSku, productId);
     }
     const product = productId ? { id: productId } : null;
-    const unitCostSnapshot = product ? await resolveCostSnapshot(product.id, o.orderedAt, cache) : null;
+    const custo = product ? await resolverCustoVigente(product.id, o.orderedAt, cache) : null;
 
     const orderItemId = `${order.id}:${item.externalSku}:${item.externalVariationId ?? ""}`;
     await prisma.orderItem.upsert({
@@ -170,7 +180,7 @@ export async function upsertNormalizedOrder(
         title: item.title,
         quantity: item.quantity,
         unitPrice: item.unitPrice,
-        unitCostSnapshot,
+        ...(custo ?? { unitCostSnapshot: null }),
         commissionAmount: item.commissionAmount,
         feeAmount: item.feeAmount,
         taxAmount: item.taxAmount,
