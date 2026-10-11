@@ -3,36 +3,7 @@ import { Check } from "lucide-react";
 import { PLAN_CATALOG, PLAN_ORDER } from "@mastershopee/billing";
 import { buttonVariants } from "@/components/ui/button";
 import { cn, formatCurrency } from "@/lib/utils";
-
-const PLAN_TAGLINES: Record<string, string> = {
-  STARTER: "Para vendedores iniciantes.",
-  PRO: "Para operações em crescimento.",
-  SCALE: "Para alto volume e times.",
-};
-
-const PLAN_HIGHLIGHTS: Record<string, string[]> = {
-  STARTER: [
-    "1 conta Shopee (Mercado Livre, SHEIN e TikTok Shop em breve)",
-    "Dashboard completo de lucro líquido",
-    "Gestão de custos com histórico",
-    "Relatórios básicos",
-    "Resumo diário (sem WhatsApp)",
-  ],
-  PRO: [
-    "Até 3 contas por marketplace",
-    "Painel de Publicidade (ROAS, ACOS)",
-    "Resumo diário via WhatsApp",
-    "Alertas configuráveis",
-    "Relatórios avançados e exportação",
-  ],
-  SCALE: [
-    "Até 10 contas por marketplace",
-    "Volume de pedidos ilimitado",
-    "Múltiplos usuários e permissões (em breve)",
-    "Suporte prioritário",
-    "Histórico de relatórios de 36 meses",
-  ],
-};
+import { PLAN_HIGHLIGHTS, PLAN_TAGLINES } from "@/lib/plan-highlights";
 
 export function Pricing() {
   return (

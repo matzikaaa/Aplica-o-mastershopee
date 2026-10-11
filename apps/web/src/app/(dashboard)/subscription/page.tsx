@@ -3,12 +3,12 @@ import { isStripeConfigured } from "@/lib/stripe";
 import { isProviderConfigured } from "@mastershopee/integrations";
 import { getIntegrationEnv } from "@/lib/integration-env";
 import { prisma } from "@mastershopee/database";
-import { PLAN_CATALOG, PLAN_ORDER, isUnlimited, type PlanCode } from "@mastershopee/billing";
+import { PLAN_CATALOG, isUnlimited, type PlanCode } from "@mastershopee/billing";
 import { statusDeAcesso } from "@/lib/billing-context";
 import { requireWorkspace } from "@/lib/session";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { SubscriptionActions } from "@/components/subscription/subscription-actions";
+import { PlanPicker, SubscriptionActions } from "@/components/subscription/subscription-actions";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 const STATUS_LABELS: Record<string, { label: string; variant: "success" | "warning" | "destructive" | "default" }> = {
@@ -44,7 +44,7 @@ export default async function SubscriptionPage({
   const env = getIntegrationEnv();
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Assinatura</h1>
 
       {/* O Stripe devolve o cliente para cá depois do Checkout. O plano muda
@@ -124,24 +124,19 @@ export default async function SubscriptionPage({
           </div>
 
           <SubscriptionActions
-            currentPlan={planCode}
             temCobranca={Boolean(subscription?.providerCustomerId) && isStripeConfigured()}
             cancelamentoAgendado={Boolean(subscription?.cancelAtPeriodEnd)}
           />
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-3">
-        {PLAN_ORDER.map((code) => (
-          <div
-            key={code}
-            className={`rounded-xl border p-4 text-sm ${code === planCode ? "border-primary bg-primary/5" : "border-border"}`}
-          >
-            <p className="font-semibold">{PLAN_CATALOG[code].name}</p>
-            <p className="mt-1 text-muted-foreground">{formatCurrency(PLAN_CATALOG[code].priceMonthly)}/mês</p>
-          </div>
-        ))}
-      </div>
+      <PlanPicker
+        currentPlan={planCode}
+        intervaloAtual={subscription?.interval === "yearly" ? "yearly" : "monthly"}
+        semAssinaturaPaga={
+          !subscription?.providerSubscriptionId || status === "canceled" || status === "expired"
+        }
+      />
 
       {/* Nota de configuração é para quem opera a plataforma. Sem esse filtro,
           com a produção ainda sem Stripe, todo cliente lia "STRIPE_SECRET_KEY"
