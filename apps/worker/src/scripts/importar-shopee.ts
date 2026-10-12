@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import {
   prisma,
   createSyncCache,
-  recomputeMetricsForDays,
+  recomputeMetricsForOrderDates,
   resolveFreshCredentials,
   countItemsWithUnknownCost,
   upsertMarketplaceProduct,
@@ -316,7 +316,8 @@ async function main() {
   let pedidos = 0;
   let semTaxaConfirmada = 0;
   let paginas = 0;
-  const diasTocados = new Set<string>();
+  // Instantes das vendas; o dia é calculado no fuso do vendedor.
+  const diasTocados: Date[] = [];
 
   log(
     recomecar
@@ -332,7 +333,7 @@ async function main() {
         await upsertNormalizedOrder(conta, pedido, cache);
         pedidos++;
         if (pedido.feesFromEscrow === false) semTaxaConfirmada++;
-        diasTocados.add(pedido.orderedAt.toISOString().slice(0, 10));
+        diasTocados.push(pedido.orderedAt);
       }
 
       const anterior = cursor.value;
@@ -396,10 +397,10 @@ async function main() {
   await relatorio(conta);
 }
 
-async function recalcular(workspaceId: string, dias: Set<string>) {
-  if (dias.size === 0) return;
-  log(`Recalculando métricas de ${dias.size} dias…`);
-  await recomputeMetricsForDays(workspaceId, [...dias]);
+async function recalcular(workspaceId: string, vendas: Date[]) {
+  if (vendas.length === 0) return;
+  const dias = await recomputeMetricsForOrderDates(workspaceId, vendas);
+  log(`Métricas recalculadas: ${dias} dias.`);
 }
 
 /** O mesmo retrato da tela "Situação", para fechar a execução com fatos. */

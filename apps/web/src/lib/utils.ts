@@ -47,8 +47,16 @@ export function formatDateOnly(date: Date | string): string {
   );
 }
 
-export function formatDate(date: Date | string, locale = "pt-BR"): string {
-  return new Intl.DateTimeFormat(locale, { day: "2-digit", month: "2-digit", year: "numeric" }).format(
+/**
+ * Data de um instante (venda, vencimento), no fuso do vendedor.
+ *
+ * No servidor, que roda em UTC, uma venda das 22h de Brasília aparecia com a
+ * data do dia seguinte. O padrão é o fuso de Brasília — o de quase todo
+ * cliente —, e as telas que têm o workspace passam o fuso dele. Para dias sem
+ * hora (métricas diárias, vigência de custo) o certo é `formatDateOnly`.
+ */
+export function formatDate(date: Date | string, timeZone = "America/Sao_Paulo"): string {
+  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", timeZone }).format(
     new Date(date),
   );
 }

@@ -68,10 +68,13 @@ export interface UpsertOrderAccount {
  */
 export interface SyncCache {
   products: Map<string, string | null>;
-  costs: Map<string, SnapshotDeCusto>;
+  /** Histórico de custo de cada produto, do mais antigo ao mais novo. */
+  costs: Map<string, CustoDatado[]>;
   /** Onde cada SKU baixa estoque, e com que multiplicador. */
   alvos: Map<string, AlvoDeEstoque>;
 }
+
+type CustoDatado = Parameters<typeof snapshotDoCusto>[0] & { effectiveFrom: Date };
 
 export function createSyncCache(): SyncCache {
   return { products: new Map(), costs: new Map(), alvos: new Map() };
@@ -87,24 +90,39 @@ export async function resolverCustoVigente(
   orderedAt: Date,
   cache?: SyncCache,
 ): Promise<SnapshotDeCusto | null> {
-  // Dia basta como chave: o custo é vigente por data, não por hora.
-  const key = `${productId}:${orderedAt.toISOString().slice(0, 10)}`;
-  const cached = cache?.costs.get(key);
-  if (cached) return cached;
+  // O histórico inteiro do produto, uma consulta por produto na rodada, e a
+  // vigência resolvida pelo instante exato da venda. A chave antiga era o dia
+  // em UTC — e um custo que vale desde a meia-noite de Brasília (03h UTC)
+  // muda no meio desse dia: dois pedidos dele pegariam o mesmo custo.
+  let historico = cache?.costs.get(productId);
+  if (!historico) {
+    historico = await prisma.productCost.findMany({
+      where: { productId },
+      orderBy: { effectiveFrom: "asc" },
+      select: {
+        unitCost: true,
+        packagingCost: true,
+        operationalCost: true,
+        otherCosts: true,
+        taxPercent: true,
+        effectiveFrom: true,
+      },
+    });
+    cache?.costs.set(productId, historico);
+  }
 
-  const cost = await prisma.productCost.findFirst({
-    where: { productId, effectiveFrom: { lte: orderedAt } },
-    orderBy: { effectiveFrom: "desc" },
-  });
+  let cost: CustoDatado | undefined;
+  for (const c of historico) {
+    if (c.effectiveFrom <= orderedAt) cost = c;
+    else break;
+  }
 
   // Null, não zero. Zero significa "esta mercadoria não custou nada"; a
   // ausência de custo cadastrado significa "não sabemos quanto custou", e as
   // duas coisas levam a lucros diferentes. Gravar zero aqui fazia o pedido
   // entrar com margem cheia e, pior, ficava invisível para o backfill — que
   // procura por null — então cadastrar o custo depois não recalculava nada.
-  const valor = cost ? snapshotDoCusto(cost) : null;
-  if (valor) cache?.costs.set(key, valor);
-  return valor;
+  return cost ? snapshotDoCusto(cost) : null;
 }
 
 /** Só o custo unitário — para quem ainda precisa só dele. */

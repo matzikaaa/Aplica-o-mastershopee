@@ -1,5 +1,5 @@
 import { collectLowStock, prisma } from "@mastershopee/database";
-import { dailyReportParams, zonedTime } from "@mastershopee/shared";
+import { chaveDoDia, dailyReportParams, dataDoDia, somarDias } from "@mastershopee/shared";
 import { sendDailyReportEmail } from "@/lib/email";
 
 /**
@@ -42,16 +42,16 @@ export async function enviarResumoDiario(
   const destinatario = workspace.dailyReportEmailTo?.trim() || workspace.members[0]?.user.email;
   if (!destinatario) return { status: "sem-destinatario" };
 
-  const hoje = zonedTime(workspace.timezone);
-  hoje.setHours(0, 0, 0, 0);
-  const alvo = opts.data ?? new Date(hoje.getTime() - 24 * 3600 * 1000);
+  // "Ontem" do vendedor, como a métrica diária é guardada — sem depender de
+  // o servidor rodar em UTC.
+  const alvo = opts.data ?? dataDoDia(somarDias(chaveDoDia(new Date(), workspace.timezone), -1));
 
   const metric = await prisma.dailyMetric.findUnique({
     where: { workspaceId_date: { workspaceId, date: alvo } },
   });
   // Sem métrica não há relatório: mandar zeros diria que o dia fechou sem
   // vendas, que é diferente de não haver dado sobre o dia.
-  if (!metric) return { status: "sem-dados", detalhe: alvo.toLocaleDateString("pt-BR") };
+  if (!metric) return { status: "sem-dados", detalhe: alvo.toLocaleDateString("pt-BR", { timeZone: "UTC" }) };
 
   const [, faturamento, lucro, margem, pedidos, ads] = dailyReportParams(workspace.name, metric);
   const estoque = await collectLowStock(workspaceId);

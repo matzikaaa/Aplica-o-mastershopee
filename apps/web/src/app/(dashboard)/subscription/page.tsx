@@ -84,7 +84,7 @@ export default async function SubscriptionPage({
               quem nem cadastrou cartão parece uma cobrança que vai acontecer. */}
           {status === "trialing" && subscription?.trialEndsAt ? (
             <p className="text-sm text-muted-foreground">
-              Teste grátis até {formatDate(subscription.trialEndsAt)}.{" "}
+              Teste grátis até {formatDate(subscription.trialEndsAt, workspace.timezone)}.{" "}
               {subscription.providerSubscriptionId
                 ? "A primeira cobrança acontece nessa data."
                 : "Para continuar depois disso, escolha um plano. Nada é cobrado sem você confirmar."}
@@ -92,14 +92,14 @@ export default async function SubscriptionPage({
           ) : (
             subscription?.currentPeriodEnd &&
             !subscription.cancelAtPeriodEnd && (
-              <p className="text-sm text-muted-foreground">Próxima cobrança em {formatDate(subscription.currentPeriodEnd)}</p>
+              <p className="text-sm text-muted-foreground">Próxima cobrança em {formatDate(subscription.currentPeriodEnd, workspace.timezone)}</p>
             )
           )}
           {subscription?.cancelAtPeriodEnd && (
             <p className="text-sm text-warning">
               Cancelamento agendado
               {subscription.currentPeriodEnd
-                ? `: o acesso continua até ${formatDate(subscription.currentPeriodEnd)}, sem nova cobrança.`
+                ? `: o acesso continua até ${formatDate(subscription.currentPeriodEnd, workspace.timezone)}, sem nova cobrança.`
                 : " para o fim do período atual."}
             </p>
           )}

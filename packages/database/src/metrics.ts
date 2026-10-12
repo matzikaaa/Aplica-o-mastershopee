@@ -3,7 +3,8 @@ import { financialEngine } from "@mastershopee/financial-engine";
 import type { MarketplaceType } from "@prisma/client";
 import { prisma } from "./index";
 import { revenueOrdersWhere, unknownCostWhere } from "./order-status";
-import { calcularItem, calcularPedido, snapshotDoCusto } from "./order-profit";
+import { calcularItensDoPedido, calcularPedido, snapshotDoCusto } from "./order-profit";
+import { chaveDoDia, dataDoDia, fimDoDia, inicioDoDia } from "@mastershopee/shared";
 
 export interface ComputeMetricsInput {
   workspaceId: string;
@@ -24,8 +25,13 @@ export interface ComputeMetricsInput {
  */
 export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<void> {
   const workspace = await prisma.workspace.findUniqueOrThrow({ where: { id: data.workspaceId } });
-  const dayStart = new Date(`${data.date}T00:00:00`);
-  const dayEnd = new Date(`${data.date}T23:59:59.999`);
+  // O dia do vendedor, não o do servidor: em UTC o dia virava às 21h de
+  // Brasília e a venda da noite entrava no dia seguinte. `dayStart`/`dayEnd`
+  // são os instantes reais para filtrar pedidos; `dia` é o valor da coluna
+  // de data sem hora em que a métrica é guardada.
+  const dayStart = inicioDoDia(data.date, workspace.timezone);
+  const dayEnd = fimDoDia(data.date, workspace.timezone);
+  const dia = dataDoDia(data.date);
 
   const orders = await prisma.order.findMany({
     // Cancelled, refunded and returned orders are excluded: they are real rows
@@ -43,7 +49,7 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
   // across orders, so adding the two would count the spend twice. The
   // allocation stays useful per product; the day's total comes from here.
   const campaignSpend = await prisma.adSpend.aggregate({
-    where: { date: dayStart, campaign: { workspaceId: workspace.id } },
+    where: { date: dia, campaign: { workspaceId: workspace.id } },
     _sum: { spend: true },
   });
   const campaignAdSpend = new Decimal(String(campaignSpend._sum.spend ?? 0));
@@ -55,7 +61,7 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
   const productsMissingCost = await prisma.product.count({ where: { workspaceId: workspace.id, costs: { none: {} } } });
 
   await prisma.dailyMetric.upsert({
-    where: { workspaceId_date: { workspaceId: workspace.id, date: dayStart } },
+    where: { workspaceId_date: { workspaceId: workspace.id, date: dia } },
     update: {
       grossRevenue: total.grossRevenue.toFixed(),
       netRevenue: total.netRevenue.toFixed(),
@@ -75,7 +81,7 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
     },
     create: {
       workspaceId: workspace.id,
-      date: dayStart,
+      date: dia,
       grossRevenue: total.grossRevenue.toFixed(),
       netRevenue: total.netRevenue.toFixed(),
       productCost: total.productCost.toFixed(),
@@ -103,12 +109,12 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
   for (const [marketplace, list] of byMarketplace) {
     const agg = financialEngine.aggregate(list, workspace.currency);
     await prisma.marketplaceMetric.upsert({
-      where: { workspaceId_marketplace_date: { workspaceId: workspace.id, marketplace, date: dayStart } },
+      where: { workspaceId_marketplace_date: { workspaceId: workspace.id, marketplace, date: dia } },
       update: { grossRevenue: agg.grossRevenue.toFixed(), netProfit: agg.netProfit.toFixed(), orderCount: list.length, computedAt: new Date() },
       create: {
         workspaceId: workspace.id,
         marketplace,
-        date: dayStart,
+        date: dia,
         grossRevenue: agg.grossRevenue.toFixed(),
         netProfit: agg.netProfit.toFixed(),
         orderCount: list.length,
@@ -116,13 +122,18 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
     });
   }
 
+  // Um marketplace que tinha venda no dia e não tem mais (pedido cancelado
+  // depois, ou o dia recortado no fuso certo) não pode manter a linha velha.
+  await prisma.marketplaceMetric.deleteMany({
+    where: { workspaceId: workspace.id, date: dia, marketplace: { notIn: [...byMarketplace.keys()] } },
+  });
+
   // Per-product rollup (§14-15, §47) — this is what the NEGATIVE_MARGIN_PRODUCT
   // alert rule reads (see packages/database/src/alert-checks.ts).
   const byProduct = new Map<string, { units: number; results: typeof results; hasCost: boolean }>();
   for (const order of orders) {
-    for (const item of order.items) {
+    for (const { item, resultado: itemResult } of calcularItensDoPedido(order)) {
       if (!item.productId) continue;
-      const itemResult = calcularItem(item);
       const entry = byProduct.get(item.productId) ?? { units: 0, results: [], hasCost: item.unitCostSnapshot !== null };
       entry.units += item.quantity;
       entry.results.push(itemResult);
@@ -133,7 +144,7 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
   for (const [productId, entry] of byProduct) {
     const agg = financialEngine.aggregate(entry.results, workspace.currency);
     await prisma.productMetric.upsert({
-      where: { workspaceId_productId_date: { workspaceId: workspace.id, productId, date: dayStart } },
+      where: { workspaceId_productId_date: { workspaceId: workspace.id, productId, date: dia } },
       update: {
         unitsSold: entry.units,
         revenue: agg.grossRevenue.toFixed(),
@@ -148,7 +159,7 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
       create: {
         workspaceId: workspace.id,
         productId,
-        date: dayStart,
+        date: dia,
         unitsSold: entry.units,
         revenue: agg.grossRevenue.toFixed(),
         cost: agg.productCost.toFixed(),
@@ -160,6 +171,12 @@ export async function computeDailyMetrics(data: ComputeMetricsInput): Promise<vo
       },
     });
   }
+
+  // Mesma regra por produto: o "produto no prejuízo" de ontem não pode vir de
+  // uma linha que nenhum pedido sustenta mais.
+  await prisma.productMetric.deleteMany({
+    where: { workspaceId: workspace.id, date: dia, productId: { notIn: [...byProduct.keys()] } },
+  });
 }
 
 /**
@@ -177,18 +194,25 @@ export async function recalcularMetricasPendentes(
 ): Promise<{ dias: number; terminou: boolean }> {
   const ws = await prisma.workspace.findUnique({
     where: { id: workspaceId },
-    select: { metricsRecomputeFrom: true },
+    select: { metricsRecomputeFrom: true, timezone: true },
   });
   const desde = ws?.metricsRecomputeFrom;
   if (!desde) return { dias: 0, terminou: true };
 
   const limite = Date.now() + prazoMs;
-  // Só os dias que têm pedido: um ano de histórico tem centenas de dias
-  // vazios, e recalcular dia vazio é gastar o prazo à toa.
+  // Os dias com pedido, no fuso do vendedor — e os que já têm métrica
+  // guardada: com o dia recortado em outro fuso, uma métrica antiga pode
+  // estar num dia que não tem mais pedido, e precisa ser zerada, não
+  // esquecida. Dia vazio fora disso não precisa de recálculo.
   const linhas = await prisma.$queryRaw<{ dia: Date }[]>`
-    SELECT DISTINCT ("orderedAt")::date AS dia
-    FROM "Order"
-    WHERE "workspaceId" = ${workspaceId} AND "orderedAt" >= ${desde}
+    SELECT dia FROM (
+      SELECT DISTINCT (("orderedAt" AT TIME ZONE 'UTC') AT TIME ZONE ${ws.timezone})::date AS dia
+      FROM "Order"
+      WHERE "workspaceId" = ${workspaceId} AND "orderedAt" >= ${desde}
+      UNION
+      SELECT "date" AS dia FROM "DailyMetric"
+      WHERE "workspaceId" = ${workspaceId} AND "date" >= ${desde}
+    ) dias
     ORDER BY dia`;
 
   let feitos = 0;
@@ -203,6 +227,21 @@ export async function recalcularMetricasPendentes(
 
   await prisma.workspace.update({ where: { id: workspaceId }, data: { metricsRecomputeFrom: null } });
   return { dias: feitos, terminou: true };
+}
+
+/**
+ * Recalcula os dias em que caem estas vendas, no fuso do workspace.
+ *
+ * Quem sincroniza tem o instante de cada pedido, não o fuso do vendedor; a
+ * conversão para "que dia é isso para ele" mora aqui, num lugar só. Antes
+ * cada chamador usava `toISOString().slice(0, 10)` — o dia em UTC —, e a
+ * venda das 22h de Brasília recalculava o dia seguinte.
+ */
+export async function recomputeMetricsForOrderDates(workspaceId: string, instantes: Iterable<Date>): Promise<number> {
+  const ws = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { timezone: true } });
+  const dias = new Set<string>();
+  for (const t of instantes) dias.add(chaveDoDia(t, ws.timezone));
+  return recomputeMetricsForDays(workspaceId, dias);
 }
 
 /**
@@ -249,7 +288,7 @@ export async function backfillMissingCostSnapshots(productId: string): Promise<s
 
   const items = await prisma.orderItem.findMany({
     where: { productId, ...unknownCostWhere() },
-    select: { id: true, order: { select: { orderedAt: true } } },
+    select: { id: true, order: { select: { orderedAt: true, workspace: { select: { timezone: true } } } } },
   });
 
   const touchedDays = new Set<string>();
@@ -272,7 +311,9 @@ export async function backfillMissingCostSnapshots(productId: string): Promise<s
       // registro também valiam naquela data.
       data: snapshotDoCusto(applicable),
     });
-    touchedDays.add(orderedAt.toISOString().slice(0, 10));
+    // O dia da venda no fuso do vendedor: é a chave que `computeDailyMetrics`
+    // recorta.
+    touchedDays.add(chaveDoDia(orderedAt, item.order.workspace.timezone));
   }
 
   return [...touchedDays];

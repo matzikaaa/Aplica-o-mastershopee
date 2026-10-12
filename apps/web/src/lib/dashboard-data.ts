@@ -1,5 +1,5 @@
-import { calcularItem, prisma, revenueOrdersWhere } from "@mastershopee/database";
-import { costIsUnknown, type DateRange } from "@mastershopee/shared";
+import { calcularItensDoPedido, prisma, revenueOrdersWhere } from "@mastershopee/database";
+import { costIsUnknown, diasDoPeriodo, type DateRange } from "@mastershopee/shared";
 import type { MarketplaceType } from "@mastershopee/database";
 import Decimal from "decimal.js";
 
@@ -44,14 +44,14 @@ function sumMetrics(rows: { grossRevenue: unknown; netProfit: unknown; adSpend: 
 
 export async function getKpiSummary(workspaceId: string, range: DateRange): Promise<KpiSummary> {
   const rows = await prisma.dailyMetric.findMany({
-    where: { workspaceId, date: { gte: range.from, lte: range.to } },
+    where: { workspaceId, date: diasDoPeriodo(range) },
   });
   return sumMetrics(rows);
 }
 
 export async function getRevenueSeries(workspaceId: string, range: DateRange) {
   const rows = await prisma.dailyMetric.findMany({
-    where: { workspaceId, date: { gte: range.from, lte: range.to } },
+    where: { workspaceId, date: diasDoPeriodo(range) },
     orderBy: { date: "asc" },
   });
   return rows.map((r) => ({
@@ -65,7 +65,7 @@ export async function getRevenueSeries(workspaceId: string, range: DateRange) {
 
 export async function getFinancialComposition(workspaceId: string, range: DateRange) {
   const rows = await prisma.dailyMetric.findMany({
-    where: { workspaceId, date: { gte: range.from, lte: range.to } },
+    where: { workspaceId, date: diasDoPeriodo(range) },
   });
 
   const sum = (pick: (r: (typeof rows)[number]) => Decimal) =>
@@ -73,6 +73,13 @@ export async function getFinancialComposition(workspaceId: string, range: DateRa
 
   return {
     grossRevenue: sum((r) => r.grossRevenue as unknown as Decimal),
+    // Receita líquida já descontada de descontos e reembolsos, e lucro bruto
+    // já descontado de embalagem e custo operacional — é deles que a DRE
+    // deriva as linhas que não têm coluna própria.
+    netRevenue: sum((r) => r.netRevenue as unknown as Decimal),
+    refunds: sum((r) => r.refunds as unknown as Decimal),
+    grossProfit: sum((r) => r.grossProfit as unknown as Decimal),
+    otherCosts: sum((r) => r.otherCosts as unknown as Decimal),
     commission: sum((r) => r.commission as unknown as Decimal),
     marketplaceFees: sum((r) => r.marketplaceFees as unknown as Decimal),
     adSpend: sum((r) => r.adSpend as unknown as Decimal),
@@ -116,24 +123,51 @@ export interface ProductRankingRow {
   unitsWithoutCost: number;
 }
 
-/** Computes per-product profit for a date range via the financial engine over raw order items (§14, §15, §47). */
+/**
+ * Lucro por produto no período, pelo motor financeiro (§14, §15, §47).
+ *
+ * Parte dos pedidos, não dos itens soltos: comissão, taxas e frete da Shopee
+ * são do pedido, e só com o pedido inteiro dá para ratear entre os itens
+ * (ver `calcularItensDoPedido`). Com `select`, e não `include`: o `rawPayload`
+ * de cada pedido não é necessário aqui e pesa — num "desde o início" com
+ * milhares de pedidos, era ele que enchia a memória.
+ */
 export async function getProductRanking(workspaceId: string, range: DateRange): Promise<ProductRankingRow[]> {
-  const items = await prisma.orderItem.findMany({
-    where: {
-      order: { workspaceId, orderedAt: { gte: range.from, lte: range.to }, ...revenueOrdersWhere },
-      productId: { not: null },
+  const orders = await prisma.order.findMany({
+    where: { workspaceId, orderedAt: { gte: range.from, lte: range.to }, ...revenueOrdersWhere },
+    select: {
+      grossAmount: true,
+      discountAmount: true,
+      commissionAmount: true,
+      marketplaceFeeAmount: true,
+      shippingSubsidizedByMerchant: true,
+      taxAmount: true,
+      adSpendAttributed: true,
+      refunds: { select: { amount: true } },
+      items: {
+        select: {
+          productId: true,
+          quantity: true,
+          unitPrice: true,
+          unitCostSnapshot: true,
+          packagingCostSnapshot: true,
+          operationalCostSnapshot: true,
+          otherCostsSnapshot: true,
+          taxPercentSnapshot: true,
+          product: { select: { sku: true, name: true } },
+        },
+      },
     },
-    include: { product: true, order: true },
   });
+  const items = orders.flatMap((order) => calcularItensDoPedido(order));
 
   const byProduct = new Map<
     string,
     { sku: string; name: string; units: number; unitsWithoutCost: number; revenue: Decimal; profit: Decimal }
   >();
 
-  for (const item of items) {
-    if (!item.product) continue;
-    const result = calcularItem(item);
+  for (const { item, resultado: result } of items) {
+    if (!item.productId || !item.product) continue;
 
     const existing = byProduct.get(item.productId!) ?? {
       sku: item.product.sku,

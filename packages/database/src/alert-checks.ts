@@ -1,4 +1,5 @@
 import type { AlertSeverity } from "@prisma/client";
+import { chaveDoDia, dataDoDia, inicioDoDia, somarDias } from "@mastershopee/shared";
 import { prisma } from "./index";
 
 /**
@@ -11,19 +12,23 @@ import { prisma } from "./index";
  * diária da Vercel enquanto isso.
  */
 export async function runAlertChecks(): Promise<{ regras: number; disparados: number }> {
-  const rules = await prisma.alertRule.findMany({ where: { isActive: true } });
-
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  yesterday.setHours(0, 0, 0, 0);
+  const rules = await prisma.alertRule.findMany({
+    where: { isActive: true },
+    include: { workspace: { select: { timezone: true } } },
+  });
 
   let disparados = 0;
   const fire = async (title: string, message: string, rule: (typeof rules)[number]) => {
-    if (await fireAlert(rule.id, rule.workspaceId, rule.severity, title, message)) disparados++;
+    const tz = rule.workspace.timezone;
+    const inicioDeHoje = inicioDoDia(chaveDoDia(new Date(), tz), tz);
+    if (await fireAlert(rule.id, rule.workspaceId, rule.severity, title, message, inicioDeHoje)) disparados++;
   };
 
   for (const rule of rules) {
     const config = (rule.config ?? {}) as Record<string, unknown>;
+    // "Ontem" do vendedor: em UTC, o dia vira às 21h de Brasília.
+    const tz = rule.workspace.timezone;
+    const yesterday = dataDoDia(somarDias(chaveDoDia(new Date(), tz), -1));
 
     switch (rule.type) {
       case "NET_MARGIN_BELOW": {
@@ -123,9 +128,10 @@ async function fireAlert(
   severity: AlertSeverity,
   title: string,
   message: string,
+  inicioDeHoje: Date,
 ): Promise<boolean> {
   const existing = await prisma.alertEvent.findFirst({
-    where: { alertRuleId, title, triggeredAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } },
+    where: { alertRuleId, title, triggeredAt: { gte: inicioDeHoje } },
   });
   if (existing) return false;
 

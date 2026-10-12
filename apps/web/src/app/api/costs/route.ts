@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { backfillMissingCostSnapshots, prisma, recomputeMetricsForDays } from "@mastershopee/database";
-import { productCostSchema } from "@mastershopee/shared";
+import { inicioDoDia, productCostSchema } from "@mastershopee/shared";
 import { requireWorkspace } from "@/lib/session";
 
 export async function POST(request: Request) {
@@ -17,8 +17,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Produto não encontrado." }, { status: 404 });
   }
 
+  // "Vigente a partir de 01/10" é a meia-noite do vendedor. A data sem hora
+  // virava meia-noite UTC — 21h do dia 30 em Brasília — e o custo novo pegava
+  // as vendas da noite anterior.
+  const effectiveFrom =
+    typeof body?.effectiveFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.effectiveFrom)
+      ? inicioDoDia(body.effectiveFrom, workspace.timezone)
+      : parsed.data.effectiveFrom;
+
   const cost = await prisma.productCost.create({
-    data: { ...parsed.data, createdByUserId: user.id },
+    data: { ...parsed.data, effectiveFrom, createdByUserId: user.id },
   });
 
   // Orders already imported without a known cost get theirs now, and the days

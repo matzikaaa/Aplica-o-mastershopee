@@ -47,7 +47,7 @@ export default async function OrderDetailPage({ params }: { params: { id: string
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Pedido {order.externalOrderId}</h1>
           <p className="text-sm text-muted-foreground">
-            {nomeDoMarketplace(order.marketplace)} · {formatDate(order.orderedAt)}
+            {nomeDoMarketplace(order.marketplace)} · {formatDate(order.orderedAt, workspace.timezone)}
           </p>
         </div>
         <Badge variant="outline">{ORDER_STATUS_LABELS[order.status] ?? order.status}</Badge>

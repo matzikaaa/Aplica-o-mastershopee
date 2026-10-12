@@ -17,6 +17,10 @@ import {
   dailyReportParams,
   morningBriefParams,
   zonedTime,
+  chaveDoDia,
+  dataDoDia,
+  somarDias,
+  inicioDoDia as inicioDoDiaLocal,
 } from "@mastershopee/shared";
 import { enviarResumoDiario } from "@/lib/daily-report-email";
 import { sincronizarAutomatico } from "@/lib/shopee-import";
@@ -39,13 +43,18 @@ import { sincronizarAutomatico } from "@/lib/shopee-import";
 export const maxDuration = 60;
 
 /**
- * Fatia do minuto reservada a trazer pedidos, por conta.
+ * Fatia do minuto reservada a trazer pedidos: por conta, e no total.
  *
  * O resto da rota ainda precisa montar e enviar os relatórios: gastar o
  * minuto inteiro sincronizando faria a função morrer antes de a mensagem
- * sair, e aí a automação inteira não entrega nada.
+ * sair, e aí a automação inteira não entrega nada. O teto por conta sozinho
+ * não bastava — eram 15 s por loja, em sequência, e a partir da quarta loja
+ * conectada a rotina passava do minuto: nenhum resumo, nenhum alerta, para
+ * nenhum cliente.
  */
 const ORCAMENTO_SYNC_MS = 15_000;
+const ORCAMENTO_SYNC_TOTAL_MS = 20_000;
+const ORCAMENTO_RECALCULO_MS = 10_000;
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
@@ -106,7 +115,9 @@ export async function GET(request: Request) {
       continue;
     }
 
-    const ontem = new Date(inicioDoDia.getTime() - 24 * 3600 * 1000);
+    // Chave do dia como a métrica diária é guardada, sem depender do fuso
+    // do servidor.
+    const ontem = dataDoDia(somarDias(chaveDoDia(new Date(), config.workspace.timezone), -1));
     const metric = await prisma.dailyMetric.findUnique({
       where: { workspaceId_date: { workspaceId: config.workspaceId, date: ontem } },
     });
@@ -218,9 +229,10 @@ async function enviarResumosPorEmail() {
   const resultados: { workspace: string; status: string; detalhe?: string }[] = [];
 
   for (const workspace of workspaces) {
-    const agora = zonedTime(workspace.timezone);
-    const inicioDoDia = new Date(agora);
-    inicioDoDia.setHours(0, 0, 0, 0);
+    // Meia-noite do vendedor como instante real: `lastDailyEmailAt` é um
+    // instante, e compará-lo com o relógio de parede escrito em UTC tratava
+    // um envio das 22h de ontem como se fosse de hoje.
+    const inicioDoDia = inicioDoDiaLocal(chaveDoDia(new Date(), workspace.timezone), workspace.timezone);
 
     if (workspace.lastDailyEmailAt && workspace.lastDailyEmailAt >= inicioDoDia) {
       resultados.push({ workspace: workspace.name, status: "já enviado hoje" });
@@ -265,16 +277,26 @@ async function enviarResumosPorEmail() {
  * dados de anteontem. O frescor durante o dia vem de quem abre o painel.
  */
 async function sincronizarPedidos() {
+  // A mais desatualizada primeiro: a que ficar de fora hoje é a que acabou de
+  // sincronizar — em geral porque o dono abriu o painel — e amanhã é a vez
+  // dela. Nenhuma loja fica dias sem atualizar porque outras vieram antes.
   const contas = await prisma.marketplaceAccount.findMany({
     where: { marketplace: "SHOPEE", status: { not: "DISCONNECTED" }, credential: { isNot: null } },
+    orderBy: { lastSyncAt: { sort: "asc", nulls: "first" } },
   });
 
   const resultado: { conta: string; pedidos: number; modo?: string; erro?: string }[] = [];
+  const limite = Date.now() + ORCAMENTO_SYNC_TOTAL_MS;
 
   for (const conta of contas) {
+    const sobra = limite - Date.now();
+    if (sobra < 3_000) {
+      resultado.push({ conta: conta.displayName, pedidos: 0, modo: "adiada para a próxima rodada" });
+      continue;
+    }
     // Uma conta com problema não pode impedir a sincronização das outras nem
     // o envio dos relatórios de quem está bem.
-    const r = await sincronizarAutomatico(conta, ORCAMENTO_SYNC_MS);
+    const r = await sincronizarAutomatico(conta, Math.min(ORCAMENTO_SYNC_MS, sobra));
     resultado.push({
       conta: conta.displayName,
       pedidos: r.gravados,
@@ -298,7 +320,7 @@ async function recalcularPendentes() {
     where: { metricsRecomputeFrom: { not: null } },
     select: { id: true, name: true },
   });
-  const limite = Date.now() + 15_000;
+  const limite = Date.now() + ORCAMENTO_RECALCULO_MS;
   const resultado: { workspace: string; dias: number; terminou: boolean }[] = [];
   for (const ws of pendentes) {
     const sobra = limite - Date.now();

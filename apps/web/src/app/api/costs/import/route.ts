@@ -5,7 +5,7 @@ import {
   recomputeMetricsForDays,
   resolveProductBySku,
 } from "@mastershopee/database";
-import { bulkCostRowSchema, type BulkImportResult } from "@mastershopee/shared";
+import { bulkCostRowSchema, inicioDoDia, type BulkImportResult } from "@mastershopee/shared";
 import { z } from "zod";
 import { requireWorkspace } from "@/lib/session";
 
@@ -18,7 +18,10 @@ export async function POST(request: Request) {
   // A edição em lote escolhe a data de vigência; a planilha não manda nenhuma
   // e continua valendo a partir de agora, como antes.
   let effectiveFrom = new Date();
-  if (body.effectiveFrom !== undefined) {
+  if (typeof body.effectiveFrom === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.effectiveFrom)) {
+    // Data sem hora: meia-noite do vendedor, não meia-noite UTC.
+    effectiveFrom = inicioDoDia(body.effectiveFrom, workspace.timezone);
+  } else if (body.effectiveFrom !== undefined) {
     const data = z.coerce.date().safeParse(body.effectiveFrom);
     if (!data.success) {
       return NextResponse.json({ error: "Data de vigência inválida." }, { status: 400 });

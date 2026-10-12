@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { prisma, runAlertChecks } from "@mastershopee/database";
+import { chaveDoDia, dataDoDia, somarDias } from "@mastershopee/shared";
 import { cleanupTestWorkspace, createTestWorkspace } from "./helpers.js";
 
+// "Ontem" no fuso do workspace de teste (America/Sao_Paulo), como o
+// verificador calcula — no relógio do servidor, entre 0h e 3h UTC seria
+// outro dia.
 function yesterdayMidnight(): Date {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  d.setHours(0, 0, 0, 0);
-  return d;
+  return dataDoDia(somarDias(chaveDoDia(new Date(), "America/Sao_Paulo"), -1));
 }
 
 describe("runAlertChecks — real Postgres (§24-25)", () => {

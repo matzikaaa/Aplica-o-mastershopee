@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDateOnly } from "@/lib/utils";
 
 interface Point {
   date: string;
@@ -55,7 +55,7 @@ export function RevenueChart({ data }: { data: Point[] }) {
             <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
             <XAxis
               dataKey="date"
-              tickFormatter={(d) => formatDate(d)}
+              tickFormatter={(d) => formatDateOnly(d)}
               tick={{ fontSize: 11, fill: "hsl(var(--muted-foreground))" }}
               axisLine={false}
               tickLine={false}
@@ -69,7 +69,7 @@ export function RevenueChart({ data }: { data: Point[] }) {
             />
             <Tooltip
               formatter={(value: number) => formatCurrency(value)}
-              labelFormatter={(d) => formatDate(d as string)}
+              labelFormatter={(d) => formatDateOnly(d as string)}
               contentStyle={{
                 background: "hsl(var(--card))",
                 border: "1px solid hsl(var(--border))",

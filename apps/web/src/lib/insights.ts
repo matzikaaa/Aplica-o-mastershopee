@@ -1,5 +1,5 @@
 import { prisma } from "@mastershopee/database";
-import type { DateRange } from "@mastershopee/shared";
+import { diasDoPeriodo, type DateRange } from "@mastershopee/shared";
 import { financialEngine } from "@mastershopee/financial-engine";
 import Decimal from "decimal.js";
 
@@ -38,7 +38,7 @@ export async function generateInsights(
   const insights: Insight[] = [];
 
   const [current, previous, lossProducts, adSpendMovers] = await Promise.all([
-    prisma.dailyMetric.findMany({ where: { workspaceId, date: { gte: range.from, lte: range.to } } }),
+    prisma.dailyMetric.findMany({ where: { workspaceId, date: diasDoPeriodo(range) } }),
     prisma.dailyMetric.findMany({ where: { workspaceId, date: { gte: previousRange.from, lte: previousRange.to } } }),
     getLossMakingProductsInsight(workspaceId, range),
     getAdSpendMarginMovers(workspaceId, range, previousRange),
@@ -87,7 +87,7 @@ export async function generateInsights(
 
 async function getLossMakingProductsInsight(workspaceId: string, range: DateRange): Promise<Insight | null> {
   const rows = await prisma.productMetric.findMany({
-    where: { workspaceId, date: { gte: range.from, lte: range.to }, netProfit: { lt: 0 } },
+    where: { workspaceId, date: diasDoPeriodo(range), netProfit: { lt: 0 } },
     include: { product: true },
   });
   if (rows.length === 0) return null;
@@ -107,7 +107,7 @@ async function getLossMakingProductsInsight(workspaceId: string, range: DateRang
 
 async function getAdSpendMarginMovers(workspaceId: string, range: DateRange, previousRange: DateRange): Promise<Insight[]> {
   const [current, previous] = await Promise.all([
-    prisma.productMetric.findMany({ where: { workspaceId, date: { gte: range.from, lte: range.to } }, include: { product: true } }),
+    prisma.productMetric.findMany({ where: { workspaceId, date: diasDoPeriodo(range) }, include: { product: true } }),
     prisma.productMetric.findMany({ where: { workspaceId, date: { gte: previousRange.from, lte: previousRange.to } } }),
   ]);
 

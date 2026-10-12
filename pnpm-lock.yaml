@@ -206,6 +206,9 @@ importers:
       '@mastershopee/inventory':
         specifier: workspace:*
         version: link:../inventory
+      '@mastershopee/shared':
+        specifier: workspace:*
+        version: link:../shared
       '@prisma/client':
         specifier: ^5.18.0
         version: 5.22.0(prisma@5.22.0)

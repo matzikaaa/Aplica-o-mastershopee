@@ -50,8 +50,15 @@ export type DateRangePreset =
   | "custom";
 
 export interface DateRange {
+  /** Primeiro instante do período: meia-noite no fuso do workspace. */
   from: Date;
+  /** Último instante do período: 23:59:59,999 no fuso do workspace. */
   to: Date;
+  /** Primeiro dia, "AAAA-MM-DD" — para colunas de data sem hora (métricas diárias). */
+  fromKey: string;
+  /** Último dia, "AAAA-MM-DD". */
+  toKey: string;
+  timezone: string;
 }
 
 /** Line-by-line breakdown behind every profit figure shown to the user (§21, §83). */

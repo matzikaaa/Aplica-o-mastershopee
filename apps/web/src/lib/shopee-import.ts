@@ -2,7 +2,7 @@ import {
   prisma,
   createSyncCache,
   pedidosJaCompletos,
-  recomputeMetricsForDays,
+  recomputeMetricsForOrderDates,
   resolveFreshCredentials,
   upsertNormalizedOrder,
   type MarketplaceAccount,
@@ -150,7 +150,8 @@ export async function sincronizarNovos(
   const provider = criarProvider();
   const inicio = Date.now();
   const cache = createSyncCache();
-  const diasTocados = new Set<string>();
+  // Instantes das vendas, não dias em UTC: o dia é o do vendedor.
+  const diasTocados: Date[] = [];
   let gravados = 0;
   let erro: string | null = null;
 
@@ -184,7 +185,7 @@ export async function sincronizarNovos(
         for (const pedido of pedidos) {
           await upsertNormalizedOrder(account, pedido, cache);
           gravados++;
-          diasTocados.add(pedido.orderedAt.toISOString().slice(0, 10));
+          diasTocados.push(pedido.orderedAt);
         }
       }
 
@@ -198,8 +199,8 @@ export async function sincronizarNovos(
     erro = err instanceof Error ? err.message : "Falha ao consultar a Shopee.";
   }
 
-  if (diasTocados.size > 0) {
-    await recomputeMetricsForDays(account.workspaceId, [...diasTocados]);
+  if (diasTocados.length > 0) {
+    await recomputeMetricsForOrderDates(account.workspaceId, diasTocados);
   }
 
   // `lastSyncAt` só avança quando a rodada percorreu a janela inteira.
@@ -330,7 +331,8 @@ export async function avancarImportacao(
 
   const inicio = Date.now();
   const cache = createSyncCache();
-  const diasTocados = new Set<string>();
+  // Instantes das vendas, não dias em UTC: o dia é o do vendedor.
+  const diasTocados: Date[] = [];
   let gravados = 0;
   let erro: string | null = null;
   let concluiu = false;
@@ -368,7 +370,7 @@ export async function avancarImportacao(
         for (const pedido of pedidos) {
           await upsertNormalizedOrder(account, pedido, cache);
           gravados++;
-          diasTocados.add(pedido.orderedAt.toISOString().slice(0, 10));
+          diasTocados.push(pedido.orderedAt);
         }
       }
 
@@ -389,8 +391,8 @@ export async function avancarImportacao(
     erro = err instanceof Error ? err.message : "Falha ao consultar a Shopee.";
   }
 
-  if (diasTocados.size > 0) {
-    await recomputeMetricsForDays(account.workspaceId, [...diasTocados]);
+  if (diasTocados.length > 0) {
+    await recomputeMetricsForOrderDates(account.workspaceId, diasTocados);
   }
 
   const atualizado = await prisma.integrationSync.update({

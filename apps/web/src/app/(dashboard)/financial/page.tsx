@@ -16,23 +16,31 @@ export default async function FinancialPage({ searchParams }: { searchParams: { 
     getKpiSummary(workspace.id, range),
   ]);
 
-  const receitaLiquida = composition.grossRevenue;
-  const cmv = composition.productCost;
-  const lucroBruto = receitaLiquida - cmv;
+  // Toda linha sai das métricas guardadas, e a conta fecha por construção.
+  // Antes "Cancelamentos" e "Descontos" eram zeros escritos no código, a
+  // receita líquida ignorava reembolsos, e embalagem e outros custos não
+  // apareciam: as linhas não somavam o lucro mostrado no fim — no relatório
+  // que vai para o contador.
+  const c = composition;
+  const descontos = c.grossRevenue - c.netRevenue - c.refunds;
+  const lucroAntesDosCustosDoProduto = c.netRevenue - c.productCost;
+  const embalagemEOperacional = lucroAntesDosCustosDoProduto - c.grossProfit;
 
-  const rows = [
-    { label: "Receita bruta", value: composition.grossRevenue, bold: true },
-    { label: "(-) Cancelamentos", value: 0 },
-    { label: "(-) Descontos", value: 0 },
-    { label: "= Receita líquida", value: receitaLiquida, bold: true, divider: true },
-    { label: "(-) CMV (custo dos produtos)", value: -cmv },
-    { label: "= Lucro bruto", value: lucroBruto, bold: true, divider: true },
-    { label: "(-) Comissões", value: -composition.commission },
-    { label: "(-) Taxas do marketplace", value: -composition.marketplaceFees },
-    { label: "(-) Fretes", value: -composition.shipping },
-    { label: "(-) ADS", value: -composition.adSpend },
-    { label: "(-) Impostos", value: -composition.taxes },
-    { label: "= Lucro líquido", value: composition.netProfit, bold: true, divider: true, tone: true },
+  const rows: { label: string; value: number; bold?: boolean; divider?: boolean; tone?: boolean }[] = [
+    { label: "Receita bruta", value: c.grossRevenue, bold: true },
+    { label: "(-) Descontos", value: -descontos },
+    { label: "(-) Devoluções e reembolsos", value: -c.refunds },
+    { label: "= Receita líquida", value: c.netRevenue, bold: true, divider: true },
+    { label: "(-) CMV (custo dos produtos)", value: -c.productCost },
+    { label: "(-) Embalagem e custo operacional", value: -embalagemEOperacional },
+    { label: "= Lucro bruto", value: c.grossProfit, bold: true, divider: true },
+    { label: "(-) Comissões", value: -c.commission },
+    { label: "(-) Taxas do marketplace", value: -c.marketplaceFees },
+    { label: "(-) Fretes", value: -c.shipping },
+    { label: "(-) ADS", value: -c.adSpend },
+    { label: "(-) Impostos", value: -c.taxes },
+    { label: "(-) Outros custos", value: -c.otherCosts },
+    { label: "= Lucro líquido", value: c.netProfit, bold: true, divider: true, tone: true },
   ];
 
   return (
@@ -50,7 +58,7 @@ export default async function FinancialPage({ searchParams }: { searchParams: { 
 
       <Card className="mx-auto max-w-xl">
         <CardHeader>
-          <CardTitle>Demonstrativo de resultado ({formatDate(range.from)} — {formatDate(range.to)})</CardTitle>
+          <CardTitle>Demonstrativo de resultado ({formatDate(range.from, workspace.timezone)} — {formatDate(range.to, workspace.timezone)})</CardTitle>
         </CardHeader>
         <CardContent className="space-y-1">
           {rows.map((row) => (

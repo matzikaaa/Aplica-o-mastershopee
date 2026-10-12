@@ -129,6 +129,73 @@ describe("custos além do unitário — real Postgres", () => {
     expect(item.taxPercentSnapshot?.toString()).toBe("4");
   });
 
+  // A Shopee manda comissão, taxas e frete no pedido e zero nos itens. O lucro
+  // por produto calculado só com o item ignorava tudo isso.
+  it("o lucro por produto rateia comissão, taxas e frete do pedido e soma o lucro do pedido", async () => {
+    const { workspace, marketplaceAccount } = await cenario();
+    const outro = await prisma.product.create({
+      data: { workspaceId: workspace.id, sku: "PRATO", name: "Prato" },
+    });
+    const caneca = await prisma.product.findFirstOrThrow({ where: { workspaceId: workspace.id, sku: "CANECA" } });
+    for (const p of [caneca, outro]) {
+      await prisma.productCost.create({
+        data: { productId: p.id, unitCost: "10.00", effectiveFrom: new Date("2026-01-01T00:00:00Z") },
+      });
+    }
+
+    const base = pedido(new Date("2026-03-10T12:00:00Z"));
+    await upsertNormalizedOrder(
+      { id: marketplaceAccount.id, workspaceId: workspace.id, marketplace: "SHOPEE" },
+      {
+        ...base,
+        grossAmount: "100.00",
+        commissionAmount: "20.00",
+        marketplaceFeeAmount: "4.00",
+        shippingSubsidizedByMerchant: "8.00",
+        items: [
+          // 75% e 25% do valor vendido; nenhuma taxa no item, como a Shopee.
+          { externalSku: "CANECA", title: "Caneca", quantity: 1, unitPrice: "75.00", commissionAmount: "0", feeAmount: "0", taxAmount: "0" },
+          { externalSku: "PRATO", title: "Prato", quantity: 1, unitPrice: "25.00", commissionAmount: "0", feeAmount: "0", taxAmount: "0" },
+        ],
+      } as never,
+    );
+
+    await computeDailyMetrics({ workspaceId: workspace.id, date: "2026-03-10" });
+
+    const porProduto = await prisma.productMetric.findMany({ where: { workspaceId: workspace.id } });
+    const lucro = (id: string) => Number(porProduto.find((m) => m.productId === id)!.netProfit);
+    // Caneca: 75 − 75% de (20 + 4 + 8) − 10 = 41. Prato: 25 − 25% de 32 − 10 = 7.
+    expect(lucro(caneca.id)).toBe(41);
+    expect(lucro(outro.id)).toBe(7);
+
+    const dia = await prisma.dailyMetric.findUniqueOrThrow({
+      where: { workspaceId_date: { workspaceId: workspace.id, date: new Date("2026-03-10T00:00:00") } },
+    });
+    expect(Number(dia.netProfit)).toBe(48);
+  });
+
+  // O servidor roda em UTC, e o dia virava às 21h de Brasília: a venda da
+  // noite entrava no dia seguinte, e o painel não batia com a Shopee.
+  it("a venda das 22h30 de Brasília entra no dia dela, não no seguinte", async () => {
+    const { workspace, marketplaceAccount } = await cenario();
+    await upsertNormalizedOrder(
+      { id: marketplaceAccount.id, workspaceId: workspace.id, marketplace: "SHOPEE" },
+      pedido(new Date("2026-03-11T01:30:00Z")) as never, // 22h30 do dia 10 em Brasília
+    );
+
+    await computeDailyMetrics({ workspaceId: workspace.id, date: "2026-03-10" });
+    await computeDailyMetrics({ workspaceId: workspace.id, date: "2026-03-11" });
+
+    const dia10 = await prisma.dailyMetric.findUniqueOrThrow({
+      where: { workspaceId_date: { workspaceId: workspace.id, date: new Date("2026-03-10T00:00:00Z") } },
+    });
+    const dia11 = await prisma.dailyMetric.findUniqueOrThrow({
+      where: { workspaceId_date: { workspaceId: workspace.id, date: new Date("2026-03-11T00:00:00Z") } },
+    });
+    expect(dia10.orderCount).toBe(1);
+    expect(dia11.orderCount).toBe(0);
+  });
+
   it("o recálculo em fatias refaz os dias com pedido e limpa a marca no fim", async () => {
     const { workspace, marketplaceAccount, product } = await cenario();
     await prisma.productCost.create({

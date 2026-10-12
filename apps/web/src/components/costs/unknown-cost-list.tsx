@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { VendaSemCusto } from "@mastershopee/database";
-import { formatDate } from "@/lib/utils";
+import { formatDate, formatDateOnly } from "@/lib/utils";
 
 /**
  * Os SKUs por trás do aviso de "itens sem custo", nomeados e com o motivo.
@@ -49,7 +49,7 @@ export function UnknownCostList({ vendas }: { vendas: VendaSemCusto[] }) {
                   )
                 ) : (
                   <>
-                    O custo vale desde {formatDate(v.custoDesde!)}, depois desta venda. Use{" "}
+                    O custo vale desde {formatDateOnly(v.custoDesde!)}, depois desta venda. Use{" "}
                     <strong>Aplicar ao histórico</strong>.
                   </>
                 )}

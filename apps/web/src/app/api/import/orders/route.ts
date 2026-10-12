@@ -6,7 +6,14 @@ import {
   snapshotDoCusto,
   type MarketplaceType,
 } from "@mastershopee/database";
-import { normalizeOrderStatus, parseBrDate, parseBrNumber, type ImportSummary } from "@mastershopee/shared";
+import {
+  chaveDoDia,
+  horarioDeParedeNoFuso,
+  normalizeOrderStatus,
+  parseBrDate,
+  parseBrNumber,
+  type ImportSummary,
+} from "@mastershopee/shared";
 import { requireWorkspace } from "@/lib/session";
 import { ensureImportAccount } from "@/lib/import-account";
 
@@ -53,7 +60,10 @@ export async function POST(request: Request) {
     const line = i + 2;
     const externalOrderId = row.externalOrderId?.trim();
     const sku = row.sku?.trim();
-    const orderedAt = parseBrDate(row.orderedAt);
+    // O relatório traz o horário do vendedor; lido no fuso do servidor, a
+    // venda ficava 3h deslocada e a da madrugada caía no dia anterior.
+    const lido = parseBrDate(row.orderedAt);
+    const orderedAt = lido ? horarioDeParedeNoFuso(lido, workspace.timezone) : null;
     const quantity = parseBrNumber(row.quantity);
     const grossAmount = parseBrNumber(row.grossAmount);
 
@@ -167,7 +177,7 @@ export async function POST(request: Request) {
         },
       });
 
-      touchedDays.add(orderDate.toISOString().slice(0, 10));
+      touchedDays.add(chaveDoDia(orderDate, workspace.timezone));
 
       if (isFirstRowOfOrder) summary.created++;
       else summary.updated++;

@@ -1,5 +1,6 @@
 import { prisma } from "@mastershopee/database";
 import { computeMetricsQueue, whatsappReportQueue } from "./queues.js";
+import { chaveDoDia, somarDias } from "@mastershopee/shared";
 
 /**
  * Registers the recurring (cron-like) jobs this worker owns (§54, §64).
@@ -24,9 +25,16 @@ export async function registerScheduledJobs(): Promise<void> {
 }
 
 /** Fans the "*" tick job out into one real compute-metrics job per active workspace/day. */
-export async function enqueueMetricsForAllWorkspaces(date: string): Promise<void> {
-  const workspaces = await prisma.workspace.findMany({ select: { id: true } });
+/**
+ * Enfileira o recálculo de hoje e de ontem de cada workspace — no fuso de
+ * cada um. "Hoje" em UTC é, no Brasil, um dia que vira às 21h.
+ */
+export async function enqueueMetricsForAllWorkspaces(): Promise<void> {
+  const workspaces = await prisma.workspace.findMany({ select: { id: true, timezone: true } });
   for (const w of workspaces) {
-    await computeMetricsQueue.add("compute", { workspaceId: w.id, date });
+    const hoje = chaveDoDia(new Date(), w.timezone);
+    for (const date of [hoje, somarDias(hoje, -1)]) {
+      await computeMetricsQueue.add("compute", { workspaceId: w.id, date });
+    }
   }
 }

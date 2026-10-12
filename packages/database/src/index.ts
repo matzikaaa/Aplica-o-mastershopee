@@ -37,6 +37,7 @@ export {
 export {
   computeDailyMetrics,
   recomputeMetricsForDays,
+  recomputeMetricsForOrderDates,
   recalcularMetricasPendentes,
   backfillMissingCostSnapshots,
   type ComputeMetricsInput,
@@ -73,11 +74,10 @@ export { runAlertChecks } from "./alert-checks";
 export {
   entradaFinanceiraDoPedido,
   calcularPedido,
-  calcularItem,
+  calcularItensDoPedido,
   snapshotDoCusto,
   type PedidoParaCalculo,
   type ItemParaCalculo,
-  type ItemComTaxas,
   type SnapshotDeCusto,
 } from "./order-profit";
 

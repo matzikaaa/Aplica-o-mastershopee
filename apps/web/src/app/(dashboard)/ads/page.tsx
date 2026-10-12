@@ -11,7 +11,7 @@ import { buttonVariants } from "@/components/ui/button";
 import { ManualAdSpendDialog } from "@/components/ads/manual-ad-spend-dialog";
 import { DeleteCampaignButton } from "@/components/ads/delete-campaign-button";
 import { Table, TableHead, TableHeader, TableRow, TableBody, TableCell } from "@/components/ui/table";
-import { formatCurrency, formatDate, formatMultiplo } from "@/lib/utils";
+import { formatCurrency, formatDateOnly, formatMultiplo } from "@/lib/utils";
 
 /**
  * §18-19: never renders an ad number the operator did not either measure or
@@ -115,7 +115,7 @@ export default async function AdsPage() {
                     <p className="text-xs text-muted-foreground">{MARKETPLACE_LABELS[row.marketplace]}</p>
                   </TableCell>
                   <TableCell className="text-sm">
-                    {formatDate(row.from)} — {formatDate(row.to)}
+                    {formatDateOnly(row.from)} — {formatDateOnly(row.to)}
                     <span className="block text-xs text-muted-foreground">
                       {row.days} {row.days === 1 ? "dia" : "dias"}
                       {row.estimated && " · rateio diário"}

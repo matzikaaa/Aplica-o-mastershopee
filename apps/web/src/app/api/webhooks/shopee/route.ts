@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import {
   createSyncCache,
   prisma,
-  recomputeMetricsForDays,
+  recomputeMetricsForOrderDates,
   resolveFreshCredentials,
   upsertNormalizedOrder,
 } from "@mastershopee/database";
@@ -347,10 +347,11 @@ async function trazerPedido(
   if (pedidos.length === 0) return;
 
   const cache = createSyncCache();
-  const dias = new Set<string>();
   for (const pedido of pedidos) {
     await upsertNormalizedOrder(conta, pedido, cache);
-    dias.add(pedido.orderedAt.toISOString().slice(0, 10));
   }
-  await recomputeMetricsForDays(conta.workspaceId, [...dias]);
+  await recomputeMetricsForOrderDates(
+    conta.workspaceId,
+    pedidos.map((p) => p.orderedAt),
+  );
 }

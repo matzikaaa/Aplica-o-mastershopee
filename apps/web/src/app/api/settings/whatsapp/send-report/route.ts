@@ -6,7 +6,7 @@ import {
   whatsappTemplates,
   WHATSAPP_NOT_CONFIGURED,
 } from "@mastershopee/integrations";
-import { buildDailySummaryMessage, dailyReportParams, zonedTime } from "@mastershopee/shared";
+import { buildDailySummaryMessage, chaveDoDia, dailyReportParams, dataDoDia, somarDias } from "@mastershopee/shared";
 import { requireWorkspace } from "@/lib/session";
 import { getPlanPermissionService } from "@/lib/billing-context";
 
@@ -43,9 +43,10 @@ export async function POST(request: Request) {
 
   // O dia é o do vendedor, não o do servidor: um relatório "de ontem" gerado
   // em UTC manda o dia errado para quem está em São Paulo depois das 21h.
-  const hoje = zonedTime(workspace.timezone);
-  hoje.setHours(0, 0, 0, 0);
-  const alvo = body.date ? new Date(`${body.date}T00:00:00`) : new Date(hoje.getTime() - 24 * 3600 * 1000);
+  if (body.date !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(body.date)) {
+    return NextResponse.json({ error: "Data inválida. Use AAAA-MM-DD." }, { status: 400 });
+  }
+  const alvo = dataDoDia(body.date ?? somarDias(chaveDoDia(new Date(), workspace.timezone), -1));
 
   const metric = await prisma.dailyMetric.findUnique({
     where: { workspaceId_date: { workspaceId: workspace.id, date: alvo } },

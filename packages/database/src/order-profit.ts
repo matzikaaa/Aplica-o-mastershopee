@@ -116,25 +116,44 @@ export function calcularPedido(order: PedidoParaCalculo): OrderEconomicsResult {
   return financialEngine.calculateOrder(entradaFinanceiraDoPedido(order));
 }
 
-/** Item vendido com as taxas do próprio item — para o lucro por produto. */
-export interface ItemComTaxas extends ItemParaCalculo {
-  commissionAmount: Valor;
-  feeAmount: Valor;
-  taxAmount: Valor;
-  adSpendAttributed: Valor;
-}
-
 /**
- * Lucro de um item isolado (ranking e métricas por produto). Mesmas parcelas
- * do pedido, para o produto não parecer mais lucrativo que os pedidos dele.
+ * Lucro de cada item de um pedido — base do lucro por produto.
+ *
+ * A Shopee cobra comissão, taxas e frete por pedido, não por item, e os itens
+ * chegam com essas parcelas zeradas. Calcular o produto só com o que está no
+ * item dava a ele a venda inteira sem nenhuma taxa: a tela de Produtos e o
+ * "produtos no prejuízo" mostravam lucro onde o pedido dava perda.
+ *
+ * Aqui cada parcela do pedido é rateada pela participação do item no valor
+ * vendido, e os custos do próprio item (produto, embalagem, imposto do
+ * cadastro) ficam com ele. A soma dos itens é, por construção, o lucro do
+ * pedido — produto e pedido nunca contam histórias diferentes.
  */
-export function calcularItem(item: ItemComTaxas): OrderEconomicsResult {
-  return financialEngine.calculateOrder({
-    grossAmount: dec(item.unitPrice).times(item.quantity),
-    commissionAmount: dec(item.commissionAmount),
-    marketplaceFeeAmount: dec(item.feeAmount),
-    taxAmount: dec(item.taxAmount).plus(impostoDoItem(item)),
-    adSpendAttributed: dec(item.adSpendAttributed),
-    items: [custoDoItem(item)],
+export function calcularItensDoPedido<I extends ItemParaCalculo>(
+  order: Omit<PedidoParaCalculo, "items"> & { items: I[] },
+): { item: I; resultado: OrderEconomicsResult }[] {
+  const valores = order.items.map((i) => dec(i.unitPrice).times(i.quantity));
+  const total = valores.reduce((acc, v) => acc.plus(v), new Decimal(0));
+  const reembolsos = (order.refunds ?? []).reduce((acc, r) => acc.plus(dec(r.amount)), new Decimal(0));
+  const n = order.items.length;
+
+  return order.items.map((item, i) => {
+    // Pedido de valor zero (brinde, troca) divide por igual em vez de dividir por zero.
+    const fatia = total.isZero() ? new Decimal(1).dividedBy(n) : valores[i]!.dividedBy(total);
+    const parte = (v: Valor) => dec(v).times(fatia);
+    return {
+      item,
+      resultado: financialEngine.calculateOrder({
+        grossAmount: parte(order.grossAmount),
+        discountAmount: parte(order.discountAmount),
+        commissionAmount: parte(order.commissionAmount),
+        marketplaceFeeAmount: parte(order.marketplaceFeeAmount),
+        shippingSubsidizedByMerchant: parte(order.shippingSubsidizedByMerchant),
+        taxAmount: parte(order.taxAmount).plus(impostoDoItem(item)),
+        adSpendAttributed: parte(order.adSpendAttributed),
+        refundAmount: reembolsos.times(fatia),
+        items: [custoDoItem(item)],
+      }),
+    };
   });
 }

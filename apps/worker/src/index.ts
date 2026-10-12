@@ -28,10 +28,7 @@ const computeMetricsWorker = new Worker<ComputeMetricsJobData>(
   QUEUE_NAMES.computeMetrics,
   async (job) => {
     if (job.data.workspaceId === "*") {
-      const today = new Date().toISOString().slice(0, 10);
-      const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
-      await enqueueMetricsForAllWorkspaces(today);
-      await enqueueMetricsForAllWorkspaces(yesterday);
+      await enqueueMetricsForAllWorkspaces();
       return;
     }
     await computeDailyMetrics(job.data);

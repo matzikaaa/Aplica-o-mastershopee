@@ -187,7 +187,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Recor
                         {order.externalOrderId}
                       </Link>
                     </TableCell>
-                    <TableCell>{formatDate(order.orderedAt)}</TableCell>
+                    <TableCell>{formatDate(order.orderedAt, workspace.timezone)}</TableCell>
                     {marketplacesComPedido.length > 1 && <TableCell>{nomeDoMarketplace(order.marketplace)}</TableCell>}
                     <TableCell className="text-right tabular-nums">{formatCurrency(order.grossAmount.toString())}</TableCell>
                     <TableCell className="text-right">
