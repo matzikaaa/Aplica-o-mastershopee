@@ -13,6 +13,7 @@ import {
   normalizeShopeeOrder,
   normalizeShopeeStatus,
   type ShopeeEscrowRaw,
+  type ShopeeInvoiceDataRaw,
   type ShopeeOrderDetailRaw,
 } from "./shopee-orders";
 import {
@@ -151,12 +152,19 @@ function explainShopeeError(code: string, environment: "test" | "live"): string 
 const LIVE_HOST = "https://partner.shopeemobile.com";
 const TEST_HOST = "https://partner.test-stable.shopeemobile.com";
 
+/** O que o detalhe do pedido precisa trazer para o cálculo. */
+const CAMPOS_DO_DETALHE = "item_list,total_amount,actual_shipping_fee,estimated_shipping_fee";
+/** A nota fiscal vinculada ao pedido (Brasil) — para o fechamento do contador. */
+const CAMPO_DA_NOTA = "invoice_data";
+
 export class ShopeeProvider implements MarketplaceProvider {
   readonly marketplace = "SHOPEE";
   readonly supportsWebhooks = true;
 
   private readonly partnerHost: string;
   private readonly signingKey: Buffer;
+  /** A Shopee recusou `invoice_data` nesta rodada: o resto dela segue sem a nota. */
+  private notaRecusada = false;
 
   constructor(
     private readonly partnerId: string,
@@ -832,16 +840,7 @@ export class ShopeeProvider implements MarketplaceProvider {
       return { items: [], ...advance() };
     }
 
-    const detail = await this.shopRequest<{ order_list?: ShopeeOrderDetailRaw[] }>(
-      "/api/v2/order/get_order_detail",
-      credentials,
-      {
-        order_sn_list: orderSns.join(","),
-        response_optional_fields: "item_list,total_amount,actual_shipping_fee,estimated_shipping_fee",
-      },
-    );
-
-    const orders = detail.order_list ?? [];
+    const orders = await this.detalharPedidos(credentials, orderSns);
     // 12, não 5: o escrow é a parte mais lenta da página e o limite da Shopee
     // é por minuto, não por simultaneidade. Cinco deixava a rede ociosa.
     const escrows = await ShopeeProvider.mapLimited(orders, 12, (order) =>
@@ -929,16 +928,7 @@ export class ShopeeProvider implements MarketplaceProvider {
 
     const saida: NormalizedOrder[] = [];
     for (const lote of lotes) {
-      const detail = await this.shopRequest<{ order_list?: ShopeeOrderDetailRaw[] }>(
-        "/api/v2/order/get_order_detail",
-        credentials,
-        {
-          order_sn_list: lote.join(","),
-          response_optional_fields: "item_list,total_amount,actual_shipping_fee,estimated_shipping_fee",
-        },
-      );
-
-      const orders = detail.order_list ?? [];
+      const orders = await this.detalharPedidos(credentials, lote);
       const escrows = await ShopeeProvider.mapLimited(orders, 12, (order) =>
         this.fetchEscrow(credentials, order.order_sn),
       );
@@ -948,6 +938,62 @@ export class ShopeeProvider implements MarketplaceProvider {
     }
 
     return saida;
+  }
+
+  /**
+   * O detalhe de até 50 pedidos, com a nota fiscal junto.
+   *
+   * A nota é um extra para o contador; os pedidos são o produto. Se a Shopee
+   * recusar o campo (`error_param`), a chamada é refeita sem ele e o resto
+   * da rodada não volta a pedi-lo — nenhum pedido deixa de entrar por causa
+   * da nota.
+   */
+  private async detalharPedidos(
+    credentials: ProviderCredentials,
+    orderSns: string[],
+  ): Promise<ShopeeOrderDetailRaw[]> {
+    const pedir = async (campos: string) =>
+      (
+        await this.shopRequest<{ order_list?: ShopeeOrderDetailRaw[] }>(
+          "/api/v2/order/get_order_detail",
+          credentials,
+          { order_sn_list: orderSns.join(","), response_optional_fields: campos },
+        )
+      ).order_list ?? [];
+
+    if (!this.notaRecusada) {
+      try {
+        return await pedir(`${CAMPOS_DO_DETALHE},${CAMPO_DA_NOTA}`);
+      } catch (err) {
+        if (!(err instanceof MarketplaceApiError) || err.providerCode !== "error_param") throw err;
+        this.notaRecusada = true;
+      }
+    }
+    return pedir(CAMPOS_DO_DETALHE);
+  }
+
+  /**
+   * Só a nota fiscal de pedidos já gravados.
+   *
+   * Para os meses que entraram antes de o detalhe trazer a nota: uma chamada
+   * a cada 50 pedidos e nenhuma de escrow, porque os valores já estão no
+   * banco. Pedido sem nota volta como null; pedido que a Shopee não devolveu
+   * (de outra loja, por exemplo) simplesmente não aparece no mapa.
+   */
+  async fetchInvoiceData(
+    credentials: ProviderCredentials,
+    orderSns: string[],
+  ): Promise<Map<string, ShopeeInvoiceDataRaw | null>> {
+    const notas = new Map<string, ShopeeInvoiceDataRaw | null>();
+    for (let i = 0; i < orderSns.length; i += 50) {
+      const r = await this.shopRequest<{ order_list?: ShopeeOrderDetailRaw[] }>(
+        "/api/v2/order/get_order_detail",
+        credentials,
+        { order_sn_list: orderSns.slice(i, i + 50).join(","), response_optional_fields: CAMPO_DA_NOTA },
+      );
+      for (const pedido of r.order_list ?? []) notas.set(pedido.order_sn, pedido.invoice_data ?? null);
+    }
+    return notas;
   }
 
   /**

@@ -153,6 +153,9 @@ export async function GET(request: Request) {
     ["Repasse confirmado pela Shopee", f.repasses.confirmado],
     ["Pedidos com repasse confirmado", f.repasses.pedidosConfirmados],
     ["Pedidos com repasse a liberar", f.repasses.pedidosPendentes],
+    ["Pedidos da Shopee com NF-e vinculada", f.notas.comNota],
+    ["Pedidos da Shopee sem NF-e vinculada", f.notas.semNota],
+    ["Cancelados ou devolvidos com NF-e emitida", f.notas.canceladosComNota],
     ["Receita líquida acumulada em 12 meses", f.receita12Meses],
     [],
     // A aba Pedidos soma o ADS rateado; quando há gasto por campanha, o
@@ -182,6 +185,9 @@ export async function GET(request: Request) {
     "Pedidos devolvidos ou reembolsados",
     "Pedidos com repasse confirmado",
     "Pedidos com repasse a liberar",
+    "Pedidos da Shopee com NF-e vinculada",
+    "Pedidos da Shopee sem NF-e vinculada",
+    "Cancelados ou devolvidos com NF-e emitida",
   ]);
   resumo.forEach((linha, r) => {
     const cel = resumoWs[XLSX.utils.encode_cell({ r, c: 1 })];
@@ -214,8 +220,16 @@ export async function GET(request: Request) {
     "Lucro líquido",
     "Margem (%)",
     "Repasse Shopee",
+    "NF-e número",
+    "NF-e série",
+    "NF-e emissão",
+    "NF-e valor",
+    // Texto, nunca número: 44 dígitos virariam 3,5E+43 no Excel.
+    "Chave de acesso NF-e",
     "Observações",
   ];
+  /** Número e série como número quando são só dígitos — o contador ordena e filtra por eles. */
+  const numeroOuTexto = (v: string | null | undefined): Celula => (v ? (/^\d+$/.test(v) ? Number(v) : v) : null);
   const linhaDePedido = (p: (typeof f.pedidos)[number]): Celula[] => [
     p.numero,
     { data: p.data },
@@ -238,6 +252,11 @@ export async function GET(request: Request) {
     p.lucro,
     p.margem,
     p.repasse,
+    numeroOuTexto(p.nf?.numero),
+    numeroOuTexto(p.nf?.serie),
+    p.nf?.emissao ? { data: p.nf.emissao } : null,
+    p.nf?.valor ?? null,
+    p.nf?.chave ?? null,
     [
       p.taxasEstimadas ? "tarifas ainda não liberadas pela Shopee" : "",
       p.semCusto ? "item sem custo cadastrado" : "",
@@ -247,24 +266,35 @@ export async function GET(request: Request) {
   ];
   const dadosPedidos = f.pedidos.map(linhaDePedido);
   const pedidosLinhas: Celula[][] = [cabecalhoPedidos, ...dadosPedidos];
-  const colunasDeValor = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20];
+  const colunasDeValor = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 24];
   if (dadosPedidos.length > 0) pedidosLinhas.push(...totalComSoma(dadosPedidos, cabecalhoPedidos.length, [6, ...colunasDeValor]));
   const pedidosWs = aba(pedidosLinhas, {
-    larguras: [22, 16, 22, 13, 12, 34, 9, 13, 11, 11, 12, 13, 10, 11, 13, 11, 11, 11, 13, 10, 13, 40],
+    larguras: [22, 16, 22, 13, 12, 34, 9, 13, 11, 11, 12, 13, 10, 11, 13, 11, 11, 11, 13, 10, 13, 11, 8, 16, 12, 46, 40],
     moeda: colunasDeValor,
     porcentagem: [19],
     filtro: dadosPedidos.length,
     timezone: tz,
   });
-  // A soma de unidades é contagem, não moeda.
+  // A soma de unidades é contagem, não moeda; número e série da nota, inteiros.
   formatoInteiro(pedidosWs, pedidosLinhas.length, [6]);
+  pedidosLinhas.forEach((_, r) => {
+    for (const c of [21, 22]) {
+      const cel = pedidosWs[XLSX.utils.encode_cell({ r, c })];
+      if (cel && cel.t === "n") cel.z = "0";
+    }
+  });
 
   // ── Cancelados e devolvidos ─────────────────────────────────────────
+  // Com a nota: cancelado com NF emitida pede cancelamento da nota ou nota de devolução.
   const dadosNaoReceita = f.naoReceita.map(
-    (p) => [p.numero, { data: p.data }, p.loja, p.status, p.itens, p.vendas] as Celula[],
+    (p) =>
+      [p.numero, { data: p.data }, p.loja, p.status, p.itens, p.vendas, numeroOuTexto(p.nf?.numero), p.nf?.chave ?? null] as Celula[],
   );
-  const naoReceita: Celula[][] = [["Pedido", "Data", "Loja", "Situação", "Itens", "Valor"], ...dadosNaoReceita];
-  if (dadosNaoReceita.length > 0) naoReceita.push(...totalComSoma(dadosNaoReceita, 6, [5]));
+  const naoReceita: Celula[][] = [
+    ["Pedido", "Data", "Loja", "Situação", "Itens", "Valor", "NF-e número", "Chave de acesso NF-e"],
+    ...dadosNaoReceita,
+  ];
+  if (dadosNaoReceita.length > 0) naoReceita.push(...totalComSoma(dadosNaoReceita, 8, [5]));
 
   // ── Produtos ────────────────────────────────────────────────────────
   // Rateado ao centavo a partir dos pedidos: o total desta aba é o da aba Pedidos.
@@ -305,7 +335,7 @@ export async function GET(request: Request) {
   XLSX.utils.book_append_sheet(livro, pedidosWs, "Pedidos");
   XLSX.utils.book_append_sheet(
     livro,
-    aba(naoReceita, { larguras: [22, 16, 22, 14, 34, 13], moeda: [5], filtro: dadosNaoReceita.length, timezone: tz }),
+    aba(naoReceita, { larguras: [22, 16, 22, 14, 34, 13, 11, 46], moeda: [5], filtro: dadosNaoReceita.length, timezone: tz }),
     "Cancelados e devolvidos",
   );
   XLSX.utils.book_append_sheet(livro, produtosWs, "Produtos");

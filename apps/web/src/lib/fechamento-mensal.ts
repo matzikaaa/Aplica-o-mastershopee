@@ -13,6 +13,7 @@ import {
   costIsUnknown,
   dataDoDia,
   formatarDocumento,
+  lerChaveDeAcesso,
   nomeDoMarketplace,
   periodo,
   somarDias,
@@ -28,6 +29,16 @@ import {
  * fechar. É um relatório gerencial: a base fiscal oficial continua sendo a
  * das notas fiscais emitidas, e o documento diz isso.
  */
+
+/** A NF-e vinculada ao pedido na Shopee, lida da chave de acesso quando há. */
+export interface NotaFiscal {
+  numero: string;
+  serie: string | null;
+  chave: string | null;
+  emissao: Date | null;
+  valor: number | null;
+  cnpjEmitente: string | null;
+}
 
 export interface LinhaDePedido {
   id: string;
@@ -54,6 +65,7 @@ export interface LinhaDePedido {
   margem: number;
   /** Valor que a Shopee informou ter repassado (escrow); null quando não há. */
   repasse: number | null;
+  nf: NotaFiscal | null;
   taxasEstimadas: boolean;
   semCusto: boolean;
 }
@@ -117,6 +129,17 @@ export interface FechamentoMensal {
    * o ADS por campanha substitui o rateio por pedido; null quando batem.
    */
   conciliacaoAds: { lucroDosPedidos: number; adsDosPedidos: number; adsDoMes: number } | null;
+  notas: {
+    /** Pedidos válidos da Shopee — de onde as notas vêm. */
+    pedidosShopee: number;
+    comNota: number;
+    semNota: number;
+    /** Cancelados ou devolvidos que tinham nota: precisa de cancelamento ou nota de devolução. */
+    canceladosComNota: number;
+    /** Notas cuja raiz de CNPJ não é a da empresa no cabeçalho. */
+    deOutroCnpj: number;
+    contaShopeeConectada: boolean;
+  };
   porLoja: { loja: string; marketplace: string; pedidos: number; vendas: number; lucro: number }[];
   ultimos12Meses: LinhaDoAno[];
   receita12Meses: number;
@@ -128,6 +151,43 @@ export interface FechamentoMensal {
 
 const n = (v: Decimal) => Number(v.toFixed(2));
 const dec = (v: unknown) => new Decimal(v === null || v === undefined ? 0 : String(v));
+
+const semZeros = (v: string) => v.replace(/^0+(?=\d)/, "");
+const texto = (v: unknown) => (typeof v === "string" || typeof v === "number" ? String(v).trim() : "");
+
+function dataDaNota(v: unknown): Date | null {
+  const bruto = typeof v === "string" && /^\d+$/.test(v.trim()) ? Number(v) : v;
+  if (typeof bruto === "number" && bruto > 0) return new Date(bruto > 1e12 ? bruto : bruto * 1000);
+  if (typeof bruto === "string" && bruto.trim()) {
+    const t = Date.parse(bruto);
+    return Number.isFinite(t) ? new Date(t) : null;
+  }
+  return null;
+}
+
+/**
+ * A nota como a Shopee devolve (`invoice_data`) → o que o documento mostra.
+ *
+ * Número e série saem da chave de acesso, conferida pelo dígito
+ * verificador: é o que a SEFAZ autorizou. Os campos soltos só valem quando a
+ * chave não veio. Sem número nenhum, não há nota.
+ */
+export function lerNotaFiscal(bruto: unknown): NotaFiscal | null {
+  if (!bruto || typeof bruto !== "object") return null;
+  const r = bruto as Record<string, unknown>;
+  const chave = lerChaveDeAcesso(typeof r.access_key === "string" ? r.access_key : null);
+  const numero = chave?.numero ?? (texto(r.number) ? semZeros(texto(r.number)) : null);
+  if (!numero) return null;
+  const valor = Number(texto(r.total_value).replace(",", "."));
+  return {
+    numero,
+    serie: chave?.serie ?? (texto(r.series_number) ? semZeros(texto(r.series_number)) : null),
+    chave: chave?.chave ?? null,
+    emissao: dataDaNota(r.issue_date),
+    valor: texto(r.total_value) && Number.isFinite(valor) ? valor : null,
+    cnpjEmitente: chave?.cnpjEmitente ?? null,
+  };
+}
 
 /**
  * Reparte um valor já em centavos entre os itens do pedido: cada parte
@@ -166,6 +226,11 @@ function ultimoDia(mes: string): string {
   const [a, m] = mes.split("-").map(Number) as [number, number];
   const proximo = m === 12 ? `${a + 1}-01` : `${a}-${String(m + 1).padStart(2, "0")}`;
   return somarDias(`${proximo}-01`, -1);
+}
+
+/** Do primeiro ao último instante do mês, no fuso do vendedor. */
+export function periodoDoMes(mes: string, timezone: string): DateRange {
+  return periodo(`${mes}-01`, ultimoDia(mes), timezone);
 }
 
 export async function montarFechamentoMensal(workspaceId: string, mes: string): Promise<FechamentoMensal> {
@@ -217,15 +282,28 @@ export async function montarFechamentoMensal(workspaceId: string, mes: string): 
 
   // O valor que a Shopee diz ter repassado, de dentro do payload guardado:
   // é o número que aparece no extrato, e o que o contador usa para conciliar.
-  const repassesBrutos = await prisma.$queryRaw<{ id: string; repasse: string | null }[]>`
-    SELECT "id", ("rawPayload"->'escrow'->'order_income'->>'escrow_amount') AS repasse
+  // E a nota fiscal que o vendedor vinculou ao pedido, guardada no mesmo payload.
+  const doPayload = await prisma.$queryRaw<{ id: string; repasse: string | null; nota: unknown }[]>`
+    SELECT "id",
+           ("rawPayload"->'escrow'->'order_income'->>'escrow_amount') AS repasse,
+           ("rawPayload"->'detail'->'invoice_data') AS nota
     FROM "Order"
     WHERE "workspaceId" = ${workspaceId} AND "orderedAt" >= ${range.from} AND "orderedAt" <= ${range.to}`;
   const repassePorPedido = new Map<string, number>();
-  for (const r of repassesBrutos) {
+  const notaPorPedido = new Map<string, NotaFiscal>();
+  for (const r of doPayload) {
     const v = r.repasse === null ? NaN : Number(r.repasse);
     if (Number.isFinite(v) && v > 0) repassePorPedido.set(r.id, v);
+    const nota = lerNotaFiscal(r.nota);
+    if (nota) notaPorPedido.set(r.id, nota);
   }
+  const contaShopeeConectada =
+    (await prisma.marketplaceAccount.count({
+      where: { workspaceId, marketplace: "SHOPEE", status: { not: "DISCONNECTED" }, credential: { isNot: null } },
+    })) > 0;
+  // Filial emite com a mesma raiz: compara os 8 primeiros caracteres.
+  const raizDaEmpresa = ws.taxId && ws.taxId.length === 14 ? ws.taxId.slice(0, 8) : null;
+  const notas = { pedidosShopee: 0, comNota: 0, semNota: 0, canceladosComNota: 0, deOutroCnpj: 0 };
 
   const pedidos: LinhaDePedido[] = [];
   const naoReceita: LinhaDePedido[] = [];
@@ -262,6 +340,8 @@ export async function montarFechamentoMensal(workspaceId: string, mes: string): 
     const receita = countsAsRevenue(o.status as OrderStatus);
     const semCusto = o.items.some((i) => costIsUnknown(i.unitCostSnapshot));
     const repasse = repassePorPedido.get(o.id) ?? null;
+    const nf = notaPorPedido.get(o.id) ?? null;
+    if (nf?.cnpjEmitente && raizDaEmpresa && nf.cnpjEmitente.slice(0, 8) !== raizDaEmpresa) notas.deOutroCnpj++;
 
     // Em centavos, e o lucro da linha como a conta das próprias colunas. O
     // contador soma a coluna: arredondar só no total fazia a soma da lista
@@ -306,11 +386,13 @@ export async function montarFechamentoMensal(workspaceId: string, mes: string): 
       lucro: lucroDaLinha,
       margem: c.vendas === 0 ? 0 : Number(new Decimal(lucroDaLinha).dividedBy(c.vendas).times(100).toFixed(2)),
       repasse,
+      nf,
       taxasEstimadas: o.feesAreEstimated,
       semCusto,
     };
 
     if (!receita) {
+      if (nf) notas.canceladosComNota++;
       naoReceita.push(linha);
       const alvo = o.status === "CANCELED" ? cancelados : devolvidos;
       alvo.quantidade++;
@@ -320,6 +402,11 @@ export async function montarFechamentoMensal(workspaceId: string, mes: string): 
 
     pedidos.push(linha);
     unidades += linha.unidades;
+    if (o.marketplace === "SHOPEE") {
+      notas.pedidosShopee++;
+      if (nf) notas.comNota++;
+      else notas.semNota++;
+    }
     if (o.feesAreEstimated) pedidosEstimados++;
     itensSemCusto += o.items.filter((i) => costIsUnknown(i.unitCostSnapshot)).length;
     if (repasse !== null) {
@@ -424,6 +511,19 @@ export async function montarFechamentoMensal(workspaceId: string, mes: string): 
   if (naoReceita.length > 0) {
     atencao.push("Pedidos cancelados, devolvidos ou reembolsos totais não entram na receita; estão listados à parte.");
   }
+  if (notas.canceladosComNota > 0) {
+    atencao.push(
+      `${notas.canceladosComNota} pedido(s) cancelado(s) ou devolvido(s) com nota fiscal emitida: a nota precisa ter sido cancelada ou ter nota de devolução.`,
+    );
+  }
+  // Só quando o vendedor emite nota (alguma veio): sem nenhuma, o mais provável
+  // é não haver obrigação ou a busca não ter sido feita, e o aviso seria ruído.
+  if (notas.comNota > 0 && notas.semNota > 0) {
+    atencao.push(`${notas.semNota} pedido(s) da Shopee sem nota fiscal vinculada.`);
+  }
+  if (notas.deOutroCnpj > 0) {
+    atencao.push(`${notas.deOutroCnpj} nota(s) emitida(s) por outro CNPJ, de raiz diferente da empresa no cabeçalho.`);
+  }
 
   const vendas = n(t.vendas);
   return {
@@ -463,6 +563,7 @@ export async function montarFechamentoMensal(workspaceId: string, mes: string): 
       devolvidos: { quantidade: devolvidos.quantidade, valor: n(devolvidos.valor) },
     },
     repasses: { confirmado: n(repasseConfirmado), pedidosConfirmados, pedidosPendentes },
+    notas: { ...notas, contaShopeeConectada },
     conciliacaoAds: ads.equals(t.adsDosPedidos)
       ? null
       : { lucroDosPedidos: n(t.lucroDosPedidos), adsDosPedidos: n(t.adsDosPedidos), adsDoMes: n(ads) },

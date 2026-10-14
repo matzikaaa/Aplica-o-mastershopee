@@ -11,6 +11,7 @@ import {
   type LinhaDePedido,
 } from "@/lib/fechamento-mensal";
 import { PrintButton } from "@/components/reports/print-button";
+import { BuscarNotasButton } from "@/components/reports/buscar-notas-button";
 import { buttonVariants } from "@/components/ui/button";
 import { Select } from "@/components/ui/input";
 import { somarDias } from "@mastershopee/shared";
@@ -61,6 +62,8 @@ export default async function FechamentoPage({ searchParams }: { searchParams: {
     lucro: f.produtos.reduce((a, p) => a + p.lucro, 0),
   };
   const faltaIdentificacao = !f.empresa.razaoSocial || !f.empresa.documento;
+  // A coluna NF só aparece quando há nota: para quem não emite, seria uma coluna de traços.
+  const temNotas = f.pedidos.some((p) => p.nf) || f.naoReceita.some((p) => p.nf);
 
   return (
     <div className="space-y-4">
@@ -111,6 +114,17 @@ export default async function FechamentoPage({ searchParams }: { searchParams: {
             Preencher em Configurações › Empresa
           </Link>
         </p>
+      )}
+
+      {f.notas.contaShopeeConectada && f.notas.semNota > 0 && (
+        <div className="mx-auto max-w-[210mm] space-y-2 rounded-lg border border-border bg-card px-4 py-3 text-sm print:hidden">
+          <p>
+            <span className="font-medium">Notas fiscais:</span> {f.notas.comNota} de {f.notas.pedidosShopee} pedidos da
+            Shopee deste mês têm a nota no app. Pedidos sincronizados antes de o app trazer a nota precisam de uma
+            busca — ela lê só a nota de cada pedido na Shopee e leva alguns segundos.
+          </p>
+          <BuscarNotasButton mes={mes} />
+        </div>
       )}
 
       <article className="mx-auto max-w-[210mm] rounded-xl border border-border bg-card px-5 py-6 text-[13px] sm:px-10 sm:py-9 leading-relaxed text-foreground shadow-sm print:max-w-none print:rounded-none print:border-0 print:p-0 print:text-[9.5pt] print:shadow-none">
@@ -181,6 +195,13 @@ export default async function FechamentoPage({ searchParams }: { searchParams: {
               rotulo="Devolvidos ou reembolsados"
               valor={`${f.numeros.devolvidos.quantidade} · ${brl(f.numeros.devolvidos.valor)}`}
             />
+            {f.notas.pedidosShopee > 0 && (
+              <Numero
+                rotulo="NF-e vinculadas (Shopee)"
+                valor={`${f.notas.comNota} de ${f.notas.pedidosShopee}`}
+                nota={f.notas.semNota > 0 ? `${f.notas.semNota} pedido(s) sem nota` : "todos os pedidos com nota"}
+              />
+            )}
             <Numero
               rotulo="Repasse confirmado pela Shopee"
               valor={brl(f.repasses.confirmado)}
@@ -250,7 +271,9 @@ export default async function FechamentoPage({ searchParams }: { searchParams: {
 
         <Secao
           titulo={`Pedidos do mês (${f.pedidos.length.toLocaleString("pt-BR")})`}
-          subtitulo="Valores em R$. Taxas = comissão + outras tarifas. Custos = produto + embalagem + outros."
+          subtitulo={`Valores em R$. Taxas = comissão + outras tarifas. Custos = produto + embalagem + outros.${
+            temNotas ? " NF = número da nota fiscal vinculada ao pedido na Shopee." : ""
+          }`}
           quebraAntes
         >
           {f.pedidos.length === 0 ? (
@@ -258,7 +281,20 @@ export default async function FechamentoPage({ searchParams }: { searchParams: {
           ) : (
             <Tabela
               compacta
-              cabecalho={["Pedido", "Data", "Vendas", "Desc.", "Taxas", "Frete", "ADS", "Custos", "Impostos", "Lucro", "Repasse"]}
+              cabecalho={[
+                "Pedido",
+                "Data",
+                ...(temNotas ? ["NF"] : []),
+                "Vendas",
+                "Desc.",
+                "Taxas",
+                "Frete",
+                "ADS",
+                "Custos",
+                "Impostos",
+                "Lucro",
+                "Repasse",
+              ]}
               alinharDireitaDesde={2}
               linhas={f.pedidos.map((p) => [
                 <span key="n" className="whitespace-nowrap font-mono text-[0.92em]">
@@ -270,6 +306,7 @@ export default async function FechamentoPage({ searchParams }: { searchParams: {
                   )}
                 </span>,
                 data.format(p.data),
+                ...(temNotas ? [p.nf?.numero ?? "—"] : []),
                 num(p.vendas),
                 num(p.descontos),
                 num(p.comissao + p.tarifas),
@@ -283,6 +320,7 @@ export default async function FechamentoPage({ searchParams }: { searchParams: {
               rodape={[
                 "Total",
                 "",
+                ...(temNotas ? [""] : []),
                 num(totais.vendas),
                 num(totais.descontos),
                 num(totais.taxas),
@@ -320,7 +358,7 @@ export default async function FechamentoPage({ searchParams }: { searchParams: {
           <Secao titulo={`Cancelados e devolvidos (${f.naoReceita.length})`} subtitulo="Não entram na receita do mês">
             <Tabela
               compacta
-              cabecalho={["Pedido", "Data", "Situação", "Valor (R$)"]}
+              cabecalho={["Pedido", "Data", "Situação", ...(temNotas ? ["NF"] : []), "Valor (R$)"]}
               alinharDireitaDesde={3}
               linhas={f.naoReceita.map((p) => [
                 <span key="n" className="whitespace-nowrap font-mono text-[0.92em]">
@@ -328,9 +366,10 @@ export default async function FechamentoPage({ searchParams }: { searchParams: {
                 </span>,
                 data.format(p.data),
                 p.status,
+                ...(temNotas ? [p.nf?.numero ?? "—"] : []),
                 num(p.vendas),
               ])}
-              rodape={["Total", "", "", num(f.naoReceita.reduce((a, p) => a + p.vendas, 0))]}
+              rodape={["Total", "", "", ...(temNotas ? [""] : []), num(f.naoReceita.reduce((a, p) => a + p.vendas, 0))]}
             />
           </Secao>
         )}

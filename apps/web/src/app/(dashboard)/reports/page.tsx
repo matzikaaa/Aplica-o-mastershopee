@@ -33,8 +33,9 @@ export default async function ReportsPage() {
           <div>
             <CardTitle className="text-base text-foreground">Fechamento mensal para o contador</CardTitle>
             <p className="mt-1 text-sm text-muted-foreground">
-              Resultado do mês (DRE), todos os pedidos com lucro líquido, repasses da Shopee para conciliar com o extrato,
-              cancelados e devolvidos, produtos vendidos e a receita dos últimos 12 meses. Sai para imprimir ou em PDF
+              Resultado do mês (DRE), todos os pedidos com lucro líquido e a nota fiscal de cada um, repasses da Shopee
+              para conciliar com o extrato, cancelados e devolvidos, produtos vendidos e a receita dos últimos 12 meses.
+              Sai para imprimir ou em PDF
               {advanced ? ", e em planilha com uma aba para cada parte." : "; a planilha faz parte do plano Pro."}
             </p>
           </div>

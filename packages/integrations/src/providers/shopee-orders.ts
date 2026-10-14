@@ -55,6 +55,25 @@ export interface ShopeeOrderItemRaw {
   model_discounted_price?: number;
 }
 
+/**
+ * A nota fiscal que o vendedor vinculou ao pedido — só existe no Brasil, onde
+ * vendedor com CNPJ envia a NF-e à Shopee antes de despachar (o pedido fica
+ * em `INVOICE_PENDING` até isso acontecer).
+ *
+ * Os tipos são largos de propósito: o que manda é a chave de acesso, de onde
+ * número, série e emitente são lidos e conferidos (`lerChaveDeAcesso`). Os
+ * outros campos entram como vierem.
+ */
+export interface ShopeeInvoiceDataRaw {
+  number?: string | number;
+  series_number?: string | number;
+  access_key?: string;
+  issue_date?: number | string;
+  total_value?: number | string;
+  products_total_value?: number | string;
+  tax_code?: string;
+}
+
 export interface ShopeeOrderDetailRaw {
   order_sn: string;
   order_status?: string;
@@ -65,6 +84,8 @@ export interface ShopeeOrderDetailRaw {
   actual_shipping_fee?: number;
   estimated_shipping_fee?: number;
   item_list?: ShopeeOrderItemRaw[];
+  /** Só quando pedido em `response_optional_fields`; nulo ou vazio sem nota. */
+  invoice_data?: ShopeeInvoiceDataRaw | null;
 }
 
 export interface ShopeeEscrowRaw {

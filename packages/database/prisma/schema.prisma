@@ -126,7 +126,7 @@ model Workspace {
   /// sem eles, mas o fechamento mensal sem razão social e CNPJ volta do
   /// escritório com a pergunta "de quem são estes números?".
   legalName  String?
-  /// CNPJ ou CPF, só dígitos.
+  /// CNPJ ou CPF sem pontuação — com letras quando o CNPJ é alfanumérico.
   taxId      String?
   /// mei | simples | presumido | real
   taxRegime  String?

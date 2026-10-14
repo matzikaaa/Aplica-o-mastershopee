@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@mastershopee/database";
 import { requireWorkspace } from "@/lib/session";
-import { REGIMES_TRIBUTARIOS, cnpjValido, cpfValido, somenteDigitos } from "@mastershopee/shared";
+import { REGIMES_TRIBUTARIOS, cnpjValido, cpfValido, normalizarDocumento } from "@mastershopee/shared";
 
 const ALLOWED_TIMEZONES = ["America/Sao_Paulo", "America/Manaus", "America/Recife", "America/Fortaleza"];
 
@@ -21,7 +21,8 @@ export async function POST(request: Request) {
   }
 
   // Dados para o contador: opcionais, mas, quando informados, certos.
-  const documento = typeof taxId === "string" ? somenteDigitos(taxId) : "";
+  // Com letras: o CNPJ alfanumérico (desde julho de 2026) tem.
+  const documento = typeof taxId === "string" ? normalizarDocumento(taxId) : "";
   if (documento && !cnpjValido(documento) && !cpfValido(documento)) {
     return NextResponse.json({ error: "CNPJ ou CPF inválido — confira os dígitos." }, { status: 400 });
   }

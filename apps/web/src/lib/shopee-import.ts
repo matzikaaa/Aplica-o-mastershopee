@@ -105,7 +105,7 @@ export function descreverProgresso(
   };
 }
 
-function criarProvider(): ShopeeProvider {
+export function criarProvider(): ShopeeProvider {
   const env = getIntegrationEnv();
   return new ShopeeProvider(
     env.SHOPEE_PARTNER_ID ?? "",

@@ -105,7 +105,8 @@ export function WorkspaceForm({
           <Input
             id="taxId"
             name="taxId"
-            inputMode="numeric"
+            // Texto, não numérico: o CNPJ alfanumérico tem letras.
+            autoCapitalize="characters"
             defaultValue={taxId ? formatarDocumento(taxId) : ""}
             placeholder="00.000.000/0000-00"
           />
