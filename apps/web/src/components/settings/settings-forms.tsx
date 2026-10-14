@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label, Select } from "@/components/ui/input";
 import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
+import { REGIMES_TRIBUTARIOS, formatarDocumento } from "@mastershopee/shared";
 
 function useSimplePost(url: string, successMessage: string) {
   const [loading, setLoading] = useState(false);
@@ -50,10 +51,33 @@ export function ProfileForm({ name }: { name: string }) {
   );
 }
 
-export function WorkspaceForm({ name, timezone }: { name: string; timezone: string }) {
+export function WorkspaceForm({
+  name,
+  timezone,
+  legalName,
+  taxId,
+  taxRegime,
+}: {
+  name: string;
+  timezone: string;
+  legalName: string | null;
+  taxId: string | null;
+  taxRegime: string | null;
+}) {
   const { submit, loading } = useSimplePost("/api/settings/workspace", "Empresa atualizada");
   return (
-    <form action={(fd) => submit({ name: fd.get("name"), timezone: fd.get("timezone") })} className="max-w-sm space-y-4">
+    <form
+      action={(fd) =>
+        submit({
+          name: fd.get("name"),
+          timezone: fd.get("timezone"),
+          legalName: fd.get("legalName"),
+          taxId: fd.get("taxId"),
+          taxRegime: fd.get("taxRegime"),
+        })
+      }
+      className="max-w-sm space-y-4"
+    >
       <div className="space-y-1.5">
         <Label htmlFor="wname">Nome da empresa</Label>
         <Input id="wname" name="name" defaultValue={name} required />
@@ -67,6 +91,38 @@ export function WorkspaceForm({ name, timezone }: { name: string; timezone: stri
           <option value="America/Fortaleza">América/Fortaleza</option>
         </Select>
       </div>
+
+      {/* Vão no cabeçalho do fechamento mensal: é o que o contador confere
+          primeiro, antes de olhar qualquer número. */}
+      <div className="space-y-4 border-t border-border pt-4">
+        <p className="text-sm font-medium">Dados para o contador</p>
+        <div className="space-y-1.5">
+          <Label htmlFor="legalName">Razão social</Label>
+          <Input id="legalName" name="legalName" defaultValue={legalName ?? ""} placeholder="Como está no CNPJ" />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="taxId">CNPJ ou CPF</Label>
+          <Input
+            id="taxId"
+            name="taxId"
+            inputMode="numeric"
+            defaultValue={taxId ? formatarDocumento(taxId) : ""}
+            placeholder="00.000.000/0000-00"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="taxRegime">Regime tributário</Label>
+          <Select id="taxRegime" name="taxRegime" defaultValue={taxRegime ?? ""}>
+            <option value="">Não informar</option>
+            {Object.entries(REGIMES_TRIBUTARIOS).map(([valor, rotulo]) => (
+              <option key={valor} value={valor}>
+                {rotulo}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
+
       <Button type="submit" disabled={loading}>
         {loading ? "Salvando..." : "Salvar"}
       </Button>

@@ -50,7 +50,13 @@ export default async function SettingsPage() {
                 <CardTitle>Empresa</CardTitle>
               </CardHeader>
               <CardContent>
-                <WorkspaceForm name={workspace.name} timezone={workspace.timezone} />
+                <WorkspaceForm
+                  name={workspace.name}
+                  timezone={workspace.timezone}
+                  legalName={workspace.legalName}
+                  taxId={workspace.taxId}
+                  taxRegime={workspace.taxRegime}
+                />
               </CardContent>
             </Card>
           </TabsContent>

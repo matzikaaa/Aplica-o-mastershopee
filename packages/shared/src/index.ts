@@ -5,6 +5,7 @@ export * from "./schemas/auth";
 export * from "./schemas/costs";
 export * from "./schemas/alerts";
 export * from "./alerts";
+export * from "./documento";
 export * from "./import";
 export * from "./daily-report";
 export * from "./cost-snapshot";

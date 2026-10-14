@@ -122,6 +122,15 @@ model Workspace {
   /// Trava de envio único por dia, sem tabela extra só para isso.
   lastDailyEmailAt        DateTime?
 
+  /// Identificação para os relatórios ao contador. Opcionais: o app funciona
+  /// sem eles, mas o fechamento mensal sem razão social e CNPJ volta do
+  /// escritório com a pergunta "de quem são estes números?".
+  legalName  String?
+  /// CNPJ ou CPF, só dígitos.
+  taxId      String?
+  /// mei | simples | presumido | real
+  taxRegime  String?
+
   /// Primeiro dia cujas métricas guardadas ficaram desatualizadas e ainda
   /// não foram recalculadas. Nulo é "tudo em dia". Recalcular o histórico
   /// inteiro de uma vez não cabe numa função serverless; a rotina diária e a

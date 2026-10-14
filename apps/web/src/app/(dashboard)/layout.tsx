@@ -54,12 +54,21 @@ export default async function DashboardLayout({ children }: { children: React.Re
           : "synced";
 
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar />
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <Header workspaceName={workspace.name} userName={user.name} userEmail={user.email} syncStatus={syncStatus} />
-        {diasDeTeste !== null && <TrialBanner dias={diasDeTeste} />}
-        <main className="flex-1 overflow-y-auto bg-muted/20 p-6">{children}</main>
+    // Na impressão, só o conteúdo: o fechamento mensal vai para o contador em
+    // PDF, e o layout de tela prendia a página numa janela de rolagem — o
+    // papel saía com a primeira tela e o menu do app.
+    <div className="flex h-screen overflow-hidden print:block print:h-auto print:overflow-visible">
+      <div className="contents print:hidden">
+        <Sidebar />
+      </div>
+      <div className="flex flex-1 flex-col overflow-hidden print:block print:overflow-visible">
+        <div className="contents print:hidden">
+          <Header workspaceName={workspace.name} userName={user.name} userEmail={user.email} syncStatus={syncStatus} />
+          {diasDeTeste !== null && <TrialBanner dias={diasDeTeste} />}
+        </div>
+        <main className="flex-1 overflow-y-auto bg-muted/20 p-6 print:overflow-visible print:bg-white print:p-0">
+          {children}
+        </main>
         {/* No layout, não numa página: a sincronização tem que acontecer
             abrindo o painel por qualquer porta — Visão Geral, Pedidos,
             Estoque. Presa a uma tela só, ela depende de o vendedor passar
